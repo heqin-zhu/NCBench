@@ -3,7 +3,7 @@ basic:
   config: configs/config.yaml
   gpu: '0'
   ignore_fold: false
-  run_name: BPfold_dim256
+  run_name: dim256
   test_epoch: null
   save_contact_map: false
 common:
@@ -42,7 +42,7 @@ learning:
   pos_weight: 300 # weight of positive samples
   save_freq: 4
 model:
-  BPfold:
+  NCfold:
     adj_ks: 3
     depth: 12
     dim: 256
@@ -51,4 +51,4 @@ model:
     num_convs: 3
     positional_embedding: dyn # alibi
     use_se: true
-  model_name: BPfold
+  model_name: NCfold
