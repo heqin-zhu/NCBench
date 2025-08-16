@@ -1,7 +1,256 @@
+import abc
 import math
 
 import torch
-from base_classes import BaseMetrics, NucClsMetrics
+from sklearn.metrics import (
+    f1_score,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    matthews_corrcoef,
+    roc_auc_score)
+
+
+class BaseMetrics(abc.ABC):
+    """Base class for functional tasks metrics
+    """
+
+    def __init__(self, metrics):
+        """
+        Args:
+            metrics: names in list
+        """
+        self.metrics = [x.lower() for x in metrics]
+
+    @abc.abstractmethod
+    def __call__(self, outputs, labels):
+        """
+        Args:
+            kwargs: required args of model (dict)
+
+        Returns:
+            metrics in dict
+        """
+        preds = torch.argmax(outputs, axis=-1)
+        preds = preds.cpu().numpy().astype('int32')
+        labels = labels.cpu().numpy().astype('int32')
+
+        res = {}
+        for name in self.metrics:
+            func = getattr(self, name)
+            if func:
+                if func == self.auc:
+                    # given two neural outputs, calculate their logits
+                    # and then calculate auc
+                    logits = torch.sigmoid(outputs).cpu().numpy()
+                    m = func(logits, labels)
+                else:
+                    m = func(preds, labels)
+                res[name] = m
+            else:
+                raise NotImplementedError
+        return res
+
+    @staticmethod
+    def accuracy(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            accuracy
+        """
+        return accuracy_score(labels, preds)
+
+    @staticmethod
+    def precision(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return precision_score(labels, preds, average='macro')
+
+    @staticmethod
+    def recall(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return recall_score(labels, preds, average='macro')
+
+    @staticmethod
+    def f1s(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return f1_score(labels, preds, average='macro')
+
+    @staticmethod
+    def mcc(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return matthews_corrcoef(labels, preds)
+
+    @staticmethod
+    def auc(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        labels += 1
+        preds = preds[:, 1]
+        return roc_auc_score(labels, preds)
+
+
+class NucClsMetrics(abc.ABC):
+    """Base class for functional tasks metrics
+    """
+
+    def __init__(self, metrics):
+        """
+        Args:
+            metrics: names in list
+        """
+        self.metrics = [x.lower() for x in metrics]
+
+    @abc.abstractmethod
+    def __call__(self, outputs, labels):
+        """
+        Args:
+            kwargs: required args of model (dict)
+
+        Returns:
+            metrics in dict
+        """
+        preds = torch.argmax(outputs, axis=-1)
+        preds = preds.cpu().numpy().astype('int32')
+        labels = labels.cpu().numpy().astype('int32')
+
+        res = {}
+        for name in self.metrics:
+            func = getattr(self, name)
+            if func:
+                if func == self.auc:
+                    # given two neural outputs, calculate their logits
+                    # and then calculate auc
+                    logits = torch.sigmoid(outputs).cpu().numpy()
+                    m = func(logits, labels)
+                else:
+                    m = func(preds, labels)
+                res[name] = m
+            else:
+                raise NotImplementedError
+        return res
+
+    @staticmethod
+    def accuracy(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            accuracy
+        """
+        return accuracy_score(labels, preds)
+
+    @staticmethod
+    def precision(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return precision_score(labels, preds, average='macro')
+
+    @staticmethod
+    def recall(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return recall_score(labels, preds, average='macro')
+
+    @staticmethod
+    def f1s(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return f1_score(labels, preds, average='macro')
+
+    @staticmethod
+    def mcc(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        return matthews_corrcoef(labels, preds)
+
+    @staticmethod
+    def auc(preds, labels):
+        """
+        All args have same shapes.
+        Args:
+            preds: predictions of model, (batch_size, 1)
+            labels: ground truth, (batch_size, 1)
+
+        Returns:
+            precision
+        """
+        labels += 1
+        preds = preds[:, 1]
+        return roc_auc_score(labels, preds)
 
 
 class NucClsMetrics(NucClsMetrics):

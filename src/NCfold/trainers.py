@@ -1,15 +1,91 @@
 import os
 import time
-from tqdm import tqdm
-
-import torch
-
-from base_classes import BaseTrainer
 from collections import defaultdict
 
+import torch
+from tqdm import tqdm
+from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
-from metrics import compare_bpseq
+from models.metrics import compare_bpseq
+
+
+class BaseTrainer(object):
+    def __init__(self,
+                 args,
+                 model,
+                 pretrained_model=None,
+                 indicator=None,
+                 ensemble=None,
+                 train_dataset=None,
+                 eval_dataset=None,
+                 data_collator=None,
+                 loss_fn=None,
+                 optimizer=None,
+                 compute_metrics=None,
+                 visual_writer=None):
+        self.args = args
+        self.model = model
+        self.pretrained_model = pretrained_model
+        self.indicator = indicator
+        self.ensemble = ensemble
+        self.train_dataset = train_dataset
+        self.eval_dataset = eval_dataset
+        self.data_collator = data_collator
+        self.loss_fn = loss_fn
+        self.optimizer = optimizer
+        self.compute_metrics = compute_metrics
+        # default name_pbar is the first metric
+        self.name_pbar = self.compute_metrics.metrics[0]
+        self.visual_writer = visual_writer
+        self.max_metric = 0.
+        self.max_model_dir = ""
+        # init dataloaders
+        self._prepare_dataloaders()
+
+    def _get_dataloader(self, dataset):
+        return DataLoader(
+            dataset,
+            batch_size=self.args.batch_size,
+            collate_fn=self.data_collator,
+            num_workers=self.args.dataloader_num_workers,
+        )
+
+    def _prepare_dataloaders(self):
+        if self.train_dataset:
+            self.train_dataloader = self._get_dataloader(self.train_dataset)
+
+        if self.eval_dataset:
+            self.eval_dataloader = self._get_dataloader(self.eval_dataset)
+
+    def save_model(self, metrics_dataset, epoch):
+        """
+        Save model after epoch training in save_dir.
+        Args:
+            metrics_dataset: metrics of dataset
+            epoch: training epoch number
+
+        Returns:
+            None
+        """
+        if metrics_dataset[self.name_pbar] > self.max_metric:
+            self.max_metric = metrics_dataset[self.name_pbar]
+            if os.path.exists(self.max_model_dir):
+                print("Remove old max model dir:", self.max_model_dir)
+                shutil.rmtree(self.max_model_dir)
+
+            self.max_model_dir = osp.join(self.args.output_dir, f"epoch{epoch}_{self.max_metric:.4f}")
+            os.makedirs(self.max_model_dir)
+            save_model_path = osp.join(
+                self.max_model_dir, "model_state.pdparams")
+            torch.save(self.model.state_dict(), save_model_path)
+            print("Model saved at:", save_model_path)
+
+    def train(self, epoch):
+        raise NotImplementedError("Must implement train method.")
+
+    def eval(self, epoch):
+        raise NotImplementedError("Must implement eval method.")
 
 
 class SeqClsTrainer(BaseTrainer):

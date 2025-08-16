@@ -1,7 +1,15 @@
 import torch
 import numpy as np
 
-from base_classes import BaseCollator
+from ..utils.NCfold_kit import Stack
+
+
+class BaseCollator(object):
+    def __init__(self):
+        self.stack_fn = Stack()
+
+    def __call__(self, raw_data_b):
+        raise NotImplementedError("Must implement __call__ method.")
 
 
 class NucClsCollator(BaseCollator):
