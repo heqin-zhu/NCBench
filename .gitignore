@@ -16,3 +16,7 @@ examples
 *png
 *jpg
 *.fasta
+*.fa
+checkpoints/
+data/
+*.csv
