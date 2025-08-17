@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
+from positional_embedding import *
+
 class SeqBackbone(nn.Module):
     """Backbone for processing RNA sequence features"""
     def __init__(self, input_dim, hidden_dim, num_layers=2, nhead=4):
@@ -153,27 +155,34 @@ class NCfold_model(nn.Module):
         Network: Signifies the deep learning architecture.
     '''
 
-    def __init__(self, seq_dim, mat_channels, out_dim=None, out_channels=None, hidden_dim=32, hidden_channels=32, num_blocks=8):
+    def __init__(self, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=None, out_channels=None, num_blocks=16):
         super(NCfold_model, self).__init__()
         out_dim = out_dim or seq_dim
         out_channels = out_channels or mat_channels
-        hidden_dim = hidden_dim or seq_dim
-        hidden_channels = hidden_channels or mat_channels
 
-        self.seq_input_proj = nn.Linear(seq_dim, hidden_dim)
-        self.mat_input_proj = nn.Conv2d(mat_channels, hidden_channels, kernel_size=1)
+        ## token embed
+        self.seq_input_embed = nn.Embedding(6, seq_dim)
+        self.mat_input_proj = nn.Conv2d(2, mat_channels, kernel_size=1) # TODO 2
+
+        ## positional embedding
+        self.seq_rope = RoPE(dim=seq_dim, max_seq_len=max_seq_len)
+        self.mat_2d_rope = Matrix2DRoPE(dim=mat_channels, max_seq_len=max_seq_len)
 
         self.blocks = nn.ModuleList()
         for _ in range(num_blocks):
-            self.blocks.append(SeqMatFusion(hidden_dim, hidden_channels, hidden_dim, hidden_channels))
+            self.blocks.append(SeqMatFusion(seq_dim, mat_channels, seq_dim, mat_channels))
         
-        self.final_seq_proj = nn.Linear(hidden_dim, out_dim)
-        self.final_mat_proj = nn.Conv2d(hidden_channels, out_channels, kernel_size=1)
+        self.final_seq_proj = nn.Linear(seq_dim, out_dim)
+        self.final_mat_proj = nn.Conv2d(mat_channels, out_channels, kernel_size=1)
         
     def forward(self, seq, mat):
-        # Input projection
-        seq_feat = self.seq_input_proj(seq)
+        # token embed
+        seq_feat = self.seq_input_embed(seq)
         mat_feat = self.mat_input_proj(mat)
+
+        # positional embedding
+        seq_feat = self.seq_rope(seq_feat)
+        mat_feat = self.mat_2d_rope(mat_feat)
         
         # Cascaded processing
         for block in self.blocks:
@@ -192,26 +201,25 @@ if __name__ == "__main__":
     sys.path.append('../util')
     from NCfold_kit import count_para
     # Hyperparameters
-    B, L = 5, 500  # Batch size, sequence length
-    hidden_dim, hidden_channels = 32, 32  # Input dimensions, 4-divided  # 0.9M
-    hidden_dim, hidden_channels = 64, 64  # Input dimensions, 4-divided  # 3.5M
-    seq_dim, mat_channels = hidden_dim, 2  # Input dimensions
+    B, L = 5, 513  # Batch size, sequence length
+    seq_dim, mat_channels = 32, 32  # 4-divided 0.9M
+    seq_dim, mat_channels = 64, 64  # 4-divided # 3.5M
     out_dim, out_channels = 4, 3  # Input dimensions
     num_blocks = 16  # Number of cascaded blocks
+    max_seq_len = 512
     
     # Create random inputs
-    seq = torch.randn(B, L, seq_dim)
-    mat = torch.randn(B, mat_channels, L, L)
+    seq = torch.randint(0, 6, (B, L)).long()
+    mat = torch.randn(B, 2, L, L)
     
     # Initialize model
     model = NCfold_model(
         seq_dim=seq_dim,
         mat_channels=mat_channels,
-        hidden_dim=hidden_dim,
-        hidden_channels=hidden_channels,
+        max_seq_len = max_seq_len,
         out_dim=out_dim,
         out_channels=out_channels,
-        num_blocks=num_blocks
+        num_blocks=num_blocks,
     )
     count_para(model)
     
