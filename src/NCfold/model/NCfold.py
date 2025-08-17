@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
+from .positional_embedding import *
 
-from positional_embedding import *
 
 class SeqBackbone(nn.Module):
     """Backbone for processing RNA sequence features"""
@@ -148,11 +148,6 @@ class SeqMatFusion(nn.Module):
 class NCfold_model(nn.Module):
     '''
     Cascaded Sequence-Matrix Fusion Network (CSMF-Net)
-    Rationale:
-        Cascaded: Highlights the key design of stacking multiple fusion blocks to enable progressive feature refinement.
-        Sequence-Matrix: Explicitly indicates the dual-modal nature of the input data (sequence features + matrix features).
-        Fusion: Emphasizes the core functionality of integrating these two data types.
-        Network: Signifies the deep learning architecture.
     '''
 
     def __init__(self, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=None, out_channels=None, num_blocks=16):
