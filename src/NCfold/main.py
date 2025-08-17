@@ -6,24 +6,23 @@ from torch.optim import AdamW
 from RNAdata import NucClsDataset
 from collators import NucClsCollator
 from trainers import SeqClsTrainer
-from models.losses import NucClsLoss
-from models.metrics import NucClsMetrics
-from utils.NCfold_kit import str2bool, str2list, count_para, get_config
 
-from NCpair import NCpair_model
+from .util.NCfold_kit import str2bool, str2list, count_para, get_config
+from .model.loss_and_metric import NCfoldLoss, compute_metrics
+from .model.NCfold import NCfold_model
 
-MODELS = ['NCpair_model']
+MODELS = ['NCfold_model']
 
-TASKS = ["NCpair"]
+TASKS = ["NCfold"]
 
 parser = argparse.ArgumentParser('Implementation of RNA sequence classification.')
 # model args
-parser.add_argument('--model_name', type=str, default="NCpair_model", choices=MODELS)
+parser.add_argument('--model_name', type=str, default="NCfold_model", choices=MODELS)
 parser.add_argument('--hidden_dim', type=int, default=64)
 parser.add_argument('--checkpoint_path', type=str)
 parser.add_argument('--config_path', type=str, default="./configs/")
 parser.add_argument('--dataset_dir', type=str, default="../data")
-parser.add_argument('--dataset', type=str, default="NCpair", choices=TASKS)
+parser.add_argument('--dataset', type=str, default="NCfold", choices=TASKS)
 parser.add_argument('--replace_T', type=bool, default=True)
 parser.add_argument('--replace_U', type=bool, default=False)
 parser.add_argument('--device', type=str, default='cuda')
@@ -47,8 +46,8 @@ args = parser.parse_args()
 if __name__ == "__main__":
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
 
-    if args.model_name == "NCpair_model":
-        model = NCpair_model(d_model=args.hidden_dim)
+    if args.model_name == "NCfold_model":
+        model = NCfold_model(d_model=args.hidden_dim)
     else:
         raise ValueError("Unknown model name: {}".format(args.model_name))
     model.to(args.device)

@@ -7,7 +7,8 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 import pandas as pd
 import numpy as np
-from models.metrics import compare_bpseq
+
+from .model.metrics import compare_bpseq
 
 
 class BaseTrainer(object):

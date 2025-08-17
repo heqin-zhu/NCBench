@@ -5,7 +5,6 @@ import os.path as osp
 import numpy as np
 import pandas as pd
 from Bio import SeqIO
-
 from torch.utils.data import Dataset
 
 from BPfold.util.RNA_kit import connects2mat, dbn2connects

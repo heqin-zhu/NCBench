@@ -143,7 +143,7 @@ class SeqMatFusion(nn.Module):
         return out_seq, out_mat
 
 
-class NCfold(nn.Module):
+class NCfold_model(nn.Module):
     '''
     Cascaded Sequence-Matrix Fusion Network (CSMF-Net)
     Rationale:
@@ -154,7 +154,7 @@ class NCfold(nn.Module):
     '''
 
     def __init__(self, seq_dim, mat_channels, out_dim=None, out_channels=None, hidden_dim=32, hidden_channels=32, num_blocks=8):
-        super(NCfold, self).__init__()
+        super(NCfold_model, self).__init__()
         out_dim = out_dim or seq_dim
         out_channels = out_channels or mat_channels
         hidden_dim = hidden_dim or seq_dim
@@ -189,7 +189,7 @@ class NCfold(nn.Module):
 if __name__ == "__main__":
     torch.manual_seed(42)
     import sys
-    sys.path.append('../utils')
+    sys.path.append('../util')
     from NCfold_kit import count_para
     # Hyperparameters
     B, L = 5, 500  # Batch size, sequence length
@@ -204,7 +204,7 @@ if __name__ == "__main__":
     mat = torch.randn(B, mat_channels, L, L)
     
     # Initialize model
-    model = NCfold(
+    model = NCfold_model(
         seq_dim=seq_dim,
         mat_channels=mat_channels,
         hidden_dim=hidden_dim,
