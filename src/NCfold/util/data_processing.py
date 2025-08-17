@@ -132,7 +132,7 @@ def prepare_dataset_onepiece(dest, data_dir, rerun=False):
     return df
 
 
-def prepare_dataset_RNAVIEW(dest, pdb_dir):
+def prepare_dataset_RNAVIEW_json(dest, pdb_dir):
     if not dest.endswith('.json'):
         dest = dest+'.json'
     if not os.path.exists(dest):
@@ -142,7 +142,6 @@ def prepare_dataset_RNAVIEW(dest, pdb_dir):
             name = f[:f.rfind('.')]
             pdb_path = os.path.join(pdb_dir, f)
             seq, ss = get_seq_and_SS_from_PDB_by_onepiece(pdb_path)
-            # labels = construct_RNAVIEW_labels(seq, info)
             info = parse_RNAVIEW_out(pdb_path)
             if len(info)!=0:
                 data.append({
@@ -231,6 +230,7 @@ def prepare_dataset_RNAVIEW_pickle(dest, data_path):
             total_ct+=1
             save_data[name] = {
                                  'seq': seq,
+                                  'name': name,
                                  'labels': labels,
                                 }
             index_data.append({
@@ -245,11 +245,12 @@ def prepare_dataset_RNAVIEW_pickle(dest, data_path):
 
     with open(index_dest, 'w') as fp:
         json.dump(index_data, fp)
-    print(f'valid={total_ct}, Bases dismatch={error_ct}')
+    print(f'valid={total_ct}, bases dismatch={error_ct}')
     if not dest.endswith('.pkl') and not dest.endswith('.pickle'):
         dest = dest[:dest.rfind('.')]+'.pickle'
     with open(dest, 'wb') as fp:
         pickle.dump(save_data, fp)
+    return save_data
 
 
 if __name__ == '__main__':
@@ -261,7 +262,7 @@ if __name__ == '__main__':
     # print(df)
 
     # run_RNAVIEW(dest, data_dir) # deprecated
-    prepare_dataset_RNAVIEW(json_dest, data_dir)
+    prepare_dataset_RNAVIEW_json(json_dest, data_dir)
     prepare_dataset_RNAVIEW_pickle(pkl_dest, json_dest)
 
     ## Example

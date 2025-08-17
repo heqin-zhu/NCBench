@@ -9,43 +9,22 @@ from torch.utils.data import Dataset
 
 from BPfold.util.RNA_kit import connects2mat, dbn2connects
 
+from ..util.data_processing import prepare_dataset_RNAVIEW_pickle
+
 
 class RNAData(Dataset):
     def __init__(self, data_dir, seed=42, train=True):
         super(RNAData, self).__init__()
         self.data_dir = data_dir
         file_name = "train.json" if train else "test.josn"
-        with open(os.path.join(data_dir, file_name)) as fp:
-            data = json.load(fp)
-
+        path = os.path.join(data_dir, file_name)
+        self.data = prepare_dataset_RNAVIEW_pickle(path)
 
     def __getitem__(self, idx):
-        seq = self.df.loc[idx, 'seq']
-        name = self.df.loc[idx, 'id']
-        label = self.df.loc[idx, 'label']
-        ret = {"seq": seq, "label": label, 'name': name}
-        return ret
+        return self.data[idx]
 
     def __len__(self):
-        return len(self.df)
-
-
-class GenerateRRInterTrainTest:
-    def __init__(self,
-                 rr_dir,
-                 dataset,
-                 split=0.8,
-                 seed=42):
-        csv_path = osp.join(rr_dir, dataset) + ".csv"
-        self.data = pd.read_csv(csv_path, sep=",").values.tolist()
-
-        self.split_index = int(len(self.data) * split)
-
-        np_rng = np.random.RandomState(seed=seed)
-        np_rng.shuffle(self.data)
-
-    def get(self):
-        return RRInterDataset(self.data[:self.split_index]), RRInterDataset(self.data[self.split_index:])
+        return len(self.data)
 
 
 def bpseq2dotbracket(bpseq):
