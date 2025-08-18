@@ -8,6 +8,8 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
+from BPfold.util.RNA_kit import read_fasta
+
 
 def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
     tmp_dir = 'tmp'
@@ -209,7 +211,7 @@ def construct_RNAVIEW_labels(data_dic, verbose=False):
     return {'labels': labels, 'pair_types': pair_types}
 
 
-def load_dataset_RNAVIEW(data_path):
+def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None):
     with open(data_path) as fp:
         json_data = json.load(fp)
     index_dest = data_path[:data_path.rfind('.')]+'_index.json'
@@ -217,6 +219,7 @@ def load_dataset_RNAVIEW(data_path):
     error_ct = 0
     data_list = []
     index_data = []
+    lengths = []
     for dic in json_data:
         name = dic['name']
         seq = dic['seq']
@@ -227,6 +230,7 @@ def load_dataset_RNAVIEW(data_path):
             labels = d['labels']
             pair_types = d['pair_types']
             total_ct+=1
+            lengths.append(len(seq))
             data_list.append({
                                  'seq': seq,
                                   'name': name,
@@ -244,7 +248,15 @@ def load_dataset_RNAVIEW(data_path):
 
     with open(index_dest, 'w') as fp:
         json.dump(index_data, fp)
+    if filter_fasta is not None:
+        names = {name for name, seq in read_fasta(filter_fasta)}
+        data_list = [d for d in data_list if d['name'] in names]
+
     print(f'Processing {data_path}: valid={total_ct}, invalid={error_ct}')
+    print(f'Lengths: min={np.min(lengths)}, max={np.max(lengths)}')
+    if max_seq_len is not None:
+        data_list = [d for d in data_list if len(d['seq'])<=max_seq_len]
+        print(f'  L<={max_seq_len} = {len([l for l in lengths if l<=max_seq_len])}')
     return data_list
 
 

@@ -1,6 +1,8 @@
 import os
 import time
+import json
 import argparse
+from datetime import datetime
 from collections import defaultdict
 
 from tqdm import tqdm
@@ -47,8 +49,7 @@ class BaseTrainer(object):
         self.loss_fn = loss_fn
         self.optimizer = optimizer
         self.compute_metrics = compute_metrics
-        # default name_pbar is the first metric
-        self.name_pbar = 'edge_orient_score' # TODO, modify compute_metrics
+        self.prime_metric = 'edge_orient_score' # TODO, modify compute_metrics
         self.visual_writer = visual_writer
         self.max_metric = 0.
         # init dataloaders
@@ -81,11 +82,11 @@ class BaseTrainer(object):
         """
         checkpoint_dir = os.path.join(self.args.output_dir, 'checkpoints')
         os.makedirs(checkpoint_dir, exist_ok=True)
-        if metrics_dataset[self.name_pbar] > self.max_metric:
-            self.max_metric = metrics_dataset[self.name_pbar]
+        if metrics_dataset[self.prime_metric] > self.max_metric:
+            self.max_metric = metrics_dataset[self.prime_metric]
             save_model_path = os.path.join(checkpoint_dir, f"epoch{epoch}_{self.max_metric:.3f}.pth")
             torch.save(self.model.state_dict(), save_model_path)
-            print(f"Epoch={epoch}:", save_model_path)
+            print(f"Save model:", save_model_path)
 
     def train(self, epoch):
         raise NotImplementedError("Must implement train method.")
@@ -99,6 +100,7 @@ class NCfoldTrainer(BaseTrainer):
         self.model.train()
         time_st = time.time()
         num_total, loss_total = 0, 0
+        mean_loss = float('inf')
 
         with tqdm(total=len(self.train_dataset)) as pbar:
             for i, data in enumerate(self.train_dataloader):
@@ -114,17 +116,16 @@ class NCfoldTrainer(BaseTrainer):
                 loss.backward()
                 self.optimizer.step()
 
-                # log to pbar
                 num_total += self.args.batch_size
                 loss_total += loss.item()
+                mean_loss = loss_total/num_total
 
-                pbar.set_postfix(train_loss='{:.4f}'.format(loss_total / num_total))
-                pbar.update(self.args.logging_steps)
+                pbar.set_description(f'[train] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.train_dataloader):>4d}, best_score={self.max_metric:.3f}, train_loss={mean_loss:.4f}')
                 # reset loss if too many steps
                 if num_total >= self.args.logging_steps:
                     num_total, loss_total = 0, 0
         time_ed = time.time() - time_st
-        print('Train\tLoss: {:.6f}; Time: {:.4f}s'.format(loss.item(), time_ed))
+        print(f'[train] epoch={epoch:>3d}, train_loss={mean_loss:.4f}, time={time_ed:.4f}s')
 
 
     def eval(self, epoch):
@@ -150,7 +151,7 @@ class NCfoldTrainer(BaseTrainer):
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:
                     num_total = 0
-                pbar.update(self.args.logging_steps)
+                pbar.set_description(f'[eval ] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.eval_dataloader):>4d}, best_score={self.max_metric:.3f}')
 
         xs = [pred_edges, pred_orients, gt_edges, gt_orients]
         metric_dic_list = [self.compute_metrics(*x) for x in zip(*xs)]
@@ -174,17 +175,22 @@ class NCfoldTrainer(BaseTrainer):
         metrics_dataset = {k: sum(v)/len(v) for k, v in metrics_dataset.items()}
 
         self.save_model(metrics_dataset, epoch)
-        pd.DataFrame(df_data).to_csv(os.path.join(self.args.output_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
+        metric_dir = os.path.join(self.args.output_dir, 'metrics')
+        os.makedirs(metric_dir, exist_ok=True)
+        pd.DataFrame(df_data).to_csv(os.path.join(metric_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
 
-        # log results to screen/bash
-        results = {}
-        log = 'Test\t' + self.args.dataset + "\t"
-        for k, v in metrics_dataset.items():
-            if 'f1' in k:
-                log += k + ": {" + k + ":.4f}\t"
-                results[k] = v
+        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics_dataset.items() if 'f1' in k])
         time_ed = time.time() - time_st
-        print(log.format(**results), "; Time: {:.4f}s".format(time_ed))
+        print(f'[eval ] epoch={epoch:>3d}, {metric_str}, time={time_ed:.4f}s')
+        epoch_metric_path = os.path.join(self.args.output_dir, 'epoch_metric.json')
+        if os.path.exists(epoch_metric_path):
+            with open(epoch_metric_path) as fp:
+                all_epoch_metric = json.load(fp)
+        else:
+            all_epoch_metric = {}
+        all_epoch_metric[epoch] = metrics_dataset
+        with open(epoch_metric_path, 'w') as fp:
+            json.dump(all_epoch_metric, fp)
 
 
 def get_args():
@@ -221,6 +227,7 @@ def get_args():
 
 
 def train_and_test():
+    print(f'Time: {datetime.now()}')
     args = get_args()
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
     if args.logging_steps is None:
@@ -252,10 +259,9 @@ def train_and_test():
         orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
     ).to(args.device)
 
-    dataset_train = RNAdata(data_dir=args.dataset_dir, filter_fasta=args.filter_fasta)
-    dataset_eval = RNAdata(data_dir=args.dataset_dir, filter_fasta=args.filter_fasta, train=False)
-    print(f'dataset_dir: {args.dataset_dir}, filtering: {args.filter_fasta}')
-    print(f'dataset={args.dataset}, train:test={len(dataset_train)}:{len(dataset_eval)}') 
+    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta)
+    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=False)
+    print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:test={len(dataset_train)}:{len(dataset_eval)}') 
     ## max_seq_len == None, for setting batch_max_len
     _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U)
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
@@ -271,7 +277,6 @@ def train_and_test():
     )
     if args.train:
         for i_epoch in range(args.num_train_epochs):
-            print("Epoch: {}".format(i_epoch))
             trainer.train(i_epoch)
             trainer.eval(i_epoch)
 

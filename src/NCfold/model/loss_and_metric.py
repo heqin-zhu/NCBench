@@ -66,8 +66,8 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
         ret[f'{flag}_mcc'] = metrics.matthews_corrcoef(gt, pred)
         ret[f'{flag}_acc'] = metrics.accuracy_score(gt, pred)
         ret[f'{flag}_p'] = metrics.precision_score(gt, pred, average=average, zero_division=0)
-        ret[f'{flag}_r'] = metrics.recall_score(gt, pred, average=average)
-        ret[f'{flag}_f1'] = metrics.f1_score(gt, pred, average=average)
+        ret[f'{flag}_r'] = metrics.recall_score(gt, pred, average=average, zero_division=0)
+        ret[f'{flag}_f1'] = metrics.f1_score(gt, pred, average=average, zero_division=0)
         # TODO
         # ret[f'{flag}_roc'] = metrics.roc_auc_score(gt, pred, average=average, multi_class='ovr')
         for cls in range(4 if flag=='edge' else 3):
@@ -77,7 +77,7 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
             else:
                 ret[f'{flag}_cls_{cls}'] = (pred[mask] == cls).mean()
     # TODO
-    ret['edge_orient_score'] = ret['edge_f1'] + ret['orient_f1']
+    ret['edge_orient_score'] = (ret['edge_f1'] + ret['orient_f1'])/2
     return ret
 
 
