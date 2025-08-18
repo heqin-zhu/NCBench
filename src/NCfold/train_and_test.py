@@ -106,7 +106,8 @@ class NCfoldTrainer(BaseTrainer):
                 label_edge = data["label_edge"].to(self.args.device)
                 label_orient = data["label_orient"].to(self.args.device)
                 pred_edge, pred_orient = self.model(input_ids, mat)
-                loss, loss_edge, loss_orient = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
+                loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
+                loss = loss_dic['loss']
                 # clear grads
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -178,15 +179,16 @@ class NCfoldTrainer(BaseTrainer):
 
 def get_args():
     parser = argparse.ArgumentParser('Implementation of RNA sequence classification.')
-    # save checkpoint
+    # data
+    parser.add_argument('--dataset_dir', type=str, default="data")
+    parser.add_argument('--dataset', type=str, default="PDB_NC", choices=DATASETS)
+    parser.add_argument('--filter_fasta', type=str, default="NC_seq_mmseqs.fasta")
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     # model args
     parser.add_argument('--model_name', type=str, default="NCfold_model", choices=MODELS)
     parser.add_argument('--hidden_dim', type=int, default=64)
     parser.add_argument('--num_blocks', type=int, default=16)
     parser.add_argument('--checkpoint_path', type=str)
-    parser.add_argument('--dataset_dir', type=str, default="data")
-    parser.add_argument('--dataset', type=str, default="PDB_NC", choices=DATASETS)
     parser.add_argument('--replace_T', type=bool, default=True)
     parser.add_argument('--replace_U', type=bool, default=False)
     parser.add_argument('--device', type=str, default='cuda')
@@ -196,6 +198,7 @@ def get_args():
     parser.add_argument('--train', type=str2bool, default=True)
     parser.add_argument('--batch_size', type=int, default=16, help='The number of samples used per step & per device.')
     parser.add_argument('--num_train_epochs', type=int, default=60, help='The number of epoch for training.')
+    parser.add_argument('--logging_steps', type=int)
     # loss weight
     parser.add_argument('--weight_edgeW', type=float, default=5)
     parser.add_argument('--weight_edgeH', type=float, default=20)
@@ -217,6 +220,8 @@ def train_and_test():
     os.makedirs(args.output_dir, exist_ok=True)
     model.to(args.device)
     count_para(model)
+    if args.logging_steps is None:
+        args.logging_steps = 1500//args.batch_size
 
     _loss_fn = NCfoldLoss(
         edge_weight=1.0, 
@@ -225,10 +230,10 @@ def train_and_test():
         orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
     ).to(args.device)
 
-    dataset_train = RNAdata(data_dir=args.dataset_dir)
-    dataset_eval = RNAdata(data_dir=args.dataset_dir, train=False)
-    print(f'dataset dir: {args.dataset_dir} {args.dataset}')
-    print(f'dataset {args.dataset} train:test={len(dataset_train)}:{len(dataset_eval)}') 
+    dataset_train = RNAdata(data_dir=args.dataset_dir, filter_fasta=args.filter_fasta)
+    dataset_eval = RNAdata(data_dir=args.dataset_dir, filter_fasta=args.filter_fasta, train=False)
+    print(f'dataset_dir: {args.dataset_dir}, filtering: {args.filter_fasta}')
+    print(f'dataset={args.dataset}, train:test={len(dataset_train)}:{len(dataset_eval)}') 
     ## max_seq_len == None, for setting batch_max_len
     _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U)
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)

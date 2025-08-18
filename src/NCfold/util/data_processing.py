@@ -221,7 +221,7 @@ def load_dataset_RNAVIEW(data_path):
         name = dic['name']
         seq = dic['seq']
         d = construct_RNAVIEW_labels(dic)
-        if d is None:
+        if d is None or len(seq)==0 or len(d['labels'])==0:
             error_ct+=1
         else:
             labels = d['labels']
@@ -244,7 +244,7 @@ def load_dataset_RNAVIEW(data_path):
 
     with open(index_dest, 'w') as fp:
         json.dump(index_data, fp)
-    print(f'valid={total_ct}, bases dismatch={error_ct}')
+    print(f'Processing {data_path}: valid={total_ct}, invalid={error_ct}')
     return data_list
 
 

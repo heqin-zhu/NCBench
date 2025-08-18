@@ -154,7 +154,7 @@ class NCfold_model(nn.Module):
     Cascaded Sequence-Matrix Fusion Network (CSMF-Net)
     '''
 
-    def __init__(self, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=None, out_channels=None, num_blocks=16):
+    def __init__(self, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=4, out_channels=3, num_blocks=16):
         super(NCfold_model, self).__init__()
         out_dim = out_dim or seq_dim
         out_channels = out_channels or mat_channels

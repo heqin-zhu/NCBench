@@ -15,24 +15,31 @@ class NCfoldLoss(nn.Module):
         self.orient_weight = orient_weight  # orient_mat weight
         
         # class-weights, for imbalanced classification
-        self.edge_criterion = nn.CrossEntropyLoss(weight=edge_weights)
+        self.edge_criterion = nn.CrossEntropyLoss(weight=edge_weights) # , reduction='none'
         self.orient_criterion = nn.CrossEntropyLoss(weight=orient_weights)
+        self.edge_num_class = 4
+        self.orient_num_class = 3
 
     def forward(self, edge_pred, orient_pred, edge_true, orient_true):
         """
         Args:
             edge_pred: shape=(B, L, 4) -> (B, 4, L), to match CrossEntropyLoss
             orient_pred: shape=(B, 3, L, L)
-            edge_true: shape=(B, L), \in {0, 1, 2, 3}
-            orient_true: shape=(B, L, L), \in {0,1,2}
+            edge_true: shape=(B, L), \in {0, 1, 2, 3}, pad value=-1
+            orient_true: shape=(B, L, L), \in {0,1,2}, pad value=-1
         """
-        edge_pred_reshaped = edge_pred.transpose(1, 2)  # (B, 4, L)
+        loss_dic = {}
+        for flag, pred, gt, criterion, num_class in [
+                             ('edge', edge_pred, edge_true, self.edge_criterion, self.edge_num_class), 
+                             ('orient', orient_pred.permute(0, 2, 3, 1), orient_true, self.orient_criterion, self.orient_num_class)]:
+            mask = gt!=-1
+            # valid_count = torch.clamp(mask.sum(), min=1)
+            pred_valid = pred[mask]
+            gt_valid = gt[mask]
+            loss_dic[flag] = criterion(pred_valid.view(-1, num_class), gt_valid.view(-1))
 
-        loss_edge = self.edge_criterion(edge_pred_reshaped, edge_true)
-        loss_orient = self.orient_criterion(orient_pred, orient_true)
-        
-        loss = self.edge_weight * loss_edge + self.orient_weight * loss_orient
-        return loss, loss_edge, loss_orient
+        loss_dic['loss'] = self.edge_weight * loss_dic['edge'] + self.orient_weight * loss_dic['orient']
+        return loss_dic
 
 
 def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='macro'):
@@ -53,6 +60,9 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
 
     for flag, pred, gt in [('edge', edge_pred_flat, edge_true_flat), ('orient', orient_pred_flat, orient_true_flat)]:
     
+        valid_mask = (gt!=-1)
+        pred = pred[valid_mask]
+        gt = gt[valid_mask]
         ret[f'{flag}_mcc'] = metrics.matthews_corrcoef(gt, pred)
         ret[f'{flag}_acc'] = metrics.accuracy_score(gt, pred)
         ret[f'{flag}_p'] = metrics.precision_score(gt, pred, average=average)
@@ -87,9 +97,8 @@ if __name__ == "__main__":
         orient_weights=orient_class_weights
     )
     
-    loss, loss_edge, loss_orient = criterion(edge_pred, orient_pred, edge_true, orient_true)
-    print(f"Total loss: {loss.item():.4f}")
-    print(f"Edge loss: {loss_edge.item():.4f}, Orient loss: {loss_orient.item():.4f}")
+    loss_dic = criterion(edge_pred, orient_pred, edge_true, orient_true)
+    print(loss_dic)
     
     metrics_dict = compute_metrics(edge_pred, orient_pred, edge_true, orient_true)
     print("\nMetrics:")

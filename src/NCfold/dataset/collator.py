@@ -73,7 +73,7 @@ class NCfoldCollator(BaseCollator):
                 mat_mask[i_batch] = np.pad(mat_mask[i_batch], ((0, pad_len), (0, pad_len)), constant_values=0)
                 seq_mask[i_batch] = np.pad(seq_mask[i_batch], ((0, pad_len)), constant_values=0)
 
-        return {
+        data_dic = {
             'mat_mask': torch.from_numpy(self.stack_fn(mat_mask)).bool(),
             'seq_mask': torch.from_numpy(self.stack_fn(seq_mask)).bool(),
             "input_ids": torch.from_numpy(self.stack_fn(input_ids_b)).long(),
@@ -83,3 +83,6 @@ class NCfoldCollator(BaseCollator):
             'name': name_b,
             'seq': seq_b,
             }
+        # for k, v in data_dic.items():
+        #     print(k, v[0], v.shape if k not in ['name', 'seq'] else len(v))
+        return data_dic
