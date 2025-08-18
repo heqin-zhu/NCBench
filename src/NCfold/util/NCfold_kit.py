@@ -5,6 +5,22 @@ import json
 from attrdict import AttrDict
 
 
+def edge_orient_to_basepair(edge, orient):
+    print(f'[Warning] Not implemeted: TODO')
+    shape = np.array(edge).shape
+    if len(shape)==1:
+        return [None]*shape[0]
+    elif len(shape)==2:
+        if shape[-1] == 4:
+            return [None]*shape[0]
+        else:
+            return [[None]*shape[1] for i in range(shape[0])]
+    elif len(edge.shape)==3:
+        return [[None]*shape[1] for i in range(shape[0])]
+    else:
+        raise Exception(f'[Error] edge shape:{edge.shape}')
+
+
 def get_config(file_path):
     config_file = file_path  # "./weights/bert_config.json"
     json_file = open(config_file, 'r')

@@ -1,7 +1,6 @@
 import os
 import re
 import json
-import pickle
 import shutil
 import subprocess
 
@@ -210,13 +209,13 @@ def construct_RNAVIEW_labels(data_dic, verbose=False):
     return {'labels': labels, 'pair_types': pair_types}
 
 
-def prepare_dataset_RNAVIEW_pickle(dest, data_path):
+def load_dataset_RNAVIEW(data_path):
     with open(data_path) as fp:
         json_data = json.load(fp)
-    index_dest = dest[:dest.rfind('.')]+'_index.json'
+    index_dest = data_path[:data_path.rfind('.')]+'_index.json'
     total_ct = 0
     error_ct = 0
-    save_data = {}
+    data_list = []
     index_data = []
     for dic in json_data:
         name = dic['name']
@@ -228,11 +227,11 @@ def prepare_dataset_RNAVIEW_pickle(dest, data_path):
             labels = d['labels']
             pair_types = d['pair_types']
             total_ct+=1
-            save_data[name] = {
+            data_list.append({
                                  'seq': seq,
                                   'name': name,
                                  'labels': labels,
-                                }
+                                })
             index_data.append({
                                'name': name,
                                'seq': seq,
@@ -246,24 +245,19 @@ def prepare_dataset_RNAVIEW_pickle(dest, data_path):
     with open(index_dest, 'w') as fp:
         json.dump(index_data, fp)
     print(f'valid={total_ct}, bases dismatch={error_ct}')
-    if not dest.endswith('.pkl') and not dest.endswith('.pickle'):
-        dest = dest[:dest.rfind('.')]+'.pickle'
-    with open(dest, 'wb') as fp:
-        pickle.dump(save_data, fp)
-    return save_data
+    return data_list
 
 
 if __name__ == '__main__':
     data_dir = 'data/PDB_download'
-    json_dest = 'data/NC_data.json'
-    pkl_dest = 'data/NC_data.pickle'
+    json_path = 'data/NC_data.json'
 
     # df = prepare_dataset_onepiece(dest, data_dir, rerun=False)
     # print(df)
 
     # run_RNAVIEW(dest, data_dir) # deprecated
-    prepare_dataset_RNAVIEW_json(json_dest, data_dir)
-    prepare_dataset_RNAVIEW_pickle(pkl_dest, json_dest)
+    prepare_dataset_RNAVIEW_json(json_path, data_dir)
+    load_dataset_RNAVIEW(json_path)
 
     ## Example
     # pdb_path = os.path.join(data_dir, '3Q51.pdb')

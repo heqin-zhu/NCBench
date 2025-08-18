@@ -31,11 +31,11 @@ class NCfoldLoss(nn.Module):
         loss_edge = self.edge_criterion(edge_pred_reshaped, edge_true)
         loss_orient = self.orient_criterion(orient_pred, orient_true)
         
-        total_loss = self.edge_weight * loss_edge + self.orient_weight * loss_orient
-        return total_loss, loss_edge, loss_orient
+        loss = self.edge_weight * loss_edge + self.orient_weight * loss_orient
+        return loss, loss_edge, loss_orient
 
 
-def compute_metrics(edge_pred, orient_pred, edge_true, orient_true):
+def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='macro'):
     """
     Returns:
         metrics_dict: F1
@@ -45,47 +45,30 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true):
     # flatting for convenient computation of metrics
     edge_pred_flat = edge_pred_class.view(-1).cpu().numpy()
     edge_true_flat = edge_true.view(-1).cpu().numpy()
-    
-    edge_acc = metrics.accuracy_score(edge_true_flat, edge_pred_flat)
-    edge_f1_macro = metrics.f1_score(
-        edge_true_flat, edge_pred_flat, 
-        average='macro', 
-        labels=[0, 1, 2, 3]
-    )
-    edge_class_acc = {}
-    for cls in range(4):
-        mask = (edge_true_flat == cls)
-        if mask.sum() == 0:
-            edge_class_acc[f'cls_{cls}'] = 0.0
-        else:
-            edge_class_acc[f'cls_{cls}'] = (edge_pred_flat[mask] == cls).mean()
-    
+
     orient_pred_class = torch.argmax(orient_pred, dim=1)  # (B, L, L)
     orient_pred_flat = orient_pred_class.view(-1).cpu().numpy()
     orient_true_flat = orient_true.view(-1).cpu().numpy()
+    ret = {}
+
+    for flag, pred, gt in [('edge', edge_pred_flat, edge_true_flat), ('orient', orient_pred_flat, orient_true_flat)]:
     
-    orient_acc = metrics.accuracy_score(orient_true_flat, orient_pred_flat)
-    orient_f1_macro = metrics.f1_score(
-        orient_true_flat, orient_pred_flat, 
-        average='macro', 
-        labels=[0, 1, 2]
-    )
-    orient_class_acc = {}
-    for cls in range(3):
-        mask = (orient_true_flat == cls)
-        if mask.sum() == 0:
-            orient_class_acc[f'cls_{cls}'] = 0.0
-        else:
-            orient_class_acc[f'cls_{cls}'] = (orient_pred_flat[mask] == cls).mean()
-    
-    return {
-        'edge_acc': edge_acc,
-        'edge_f1_macro': edge_f1_macro,
-        **edge_class_acc, 
-        'orient_acc': orient_acc,
-        'orient_f1_macro': orient_f1_macro,
-        ** orient_class_acc,
-    }
+        ret[f'{flag}_mcc'] = metrics.matthews_corrcoef(gt, pred)
+        ret[f'{flag}_acc'] = metrics.accuracy_score(gt, pred)
+        ret[f'{flag}_p'] = metrics.precision_score(gt, pred, average=average)
+        ret[f'{flag}_r'] = metrics.recall_score(gt, pred, average=average)
+        ret[f'{flag}_f1'] = metrics.f1_score(gt, pred, average=average)
+        # TODO
+        # ret[f'{flag}_roc'] = metrics.roc_auc_score(gt, pred, average=average, multi_class='ovr')
+        for cls in range(4 if flag=='edge' else 3):
+            mask = (gt == cls)
+            if mask.sum() == 0:
+                ret[f'{flag}_cls_{cls}'] = 0.0
+            else:
+                ret[f'{flag}_cls_{cls}'] = (pred[mask] == cls).mean()
+    # TODO
+    ret['edge_orient_score'] = ret['edge_f1'] + ret['orient_f1']
+    return ret
 
 
 if __name__ == "__main__":
@@ -104,8 +87,8 @@ if __name__ == "__main__":
         orient_weights=orient_class_weights
     )
     
-    total_loss, loss_edge, loss_orient = criterion(edge_pred, orient_pred, edge_true, orient_true)
-    print(f"Total loss: {total_loss.item():.4f}")
+    loss, loss_edge, loss_orient = criterion(edge_pred, orient_pred, edge_true, orient_true)
+    print(f"Total loss: {loss.item():.4f}")
     print(f"Edge loss: {loss_edge.item():.4f}, Orient loss: {loss_orient.item():.4f}")
     
     metrics_dict = compute_metrics(edge_pred, orient_pred, edge_true, orient_true)

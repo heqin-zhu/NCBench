@@ -10,16 +10,15 @@ import torch
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
-from trainers import SeqClsTrainer
 from .dataset.RNAdata import RNAdata
 from .dataset.collator import NCfoldCollator
 from .model.NCfold import NCfold_model
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
-from .util.NCfold_kit import str2bool, str2list, count_para, get_config
+from .util.NCfold_kit import str2bool, str2list, count_para, get_config, edge_orient_to_basepair
 
 
 MODELS = ['NCfold_model']
-TASKS = ["NCfold"]
+DATASETS = ["PDB_NC"]
 
 
 class BaseTrainer(object):
@@ -48,10 +47,9 @@ class BaseTrainer(object):
         self.optimizer = optimizer
         self.compute_metrics = compute_metrics
         # default name_pbar is the first metric
-        self.name_pbar = self.compute_metrics.metrics[0]
+        self.name_pbar = 'edge_orient_score' # TODO, modify compute_metrics
         self.visual_writer = visual_writer
         self.max_metric = 0.
-        self.max_model_dir = ""
         # init dataloaders
         self._prepare_dataloaders()
 
@@ -80,18 +78,13 @@ class BaseTrainer(object):
         Returns:
             None
         """
+        checkpoint_dir = os.path.join(self.args.output_dir, 'checkpoints')
+        os.makedirs(checkpoint_dir, exist_ok=True)
         if metrics_dataset[self.name_pbar] > self.max_metric:
             self.max_metric = metrics_dataset[self.name_pbar]
-            if os.path.exists(self.max_model_dir):
-                print("Remove old max model dir:", self.max_model_dir)
-                shutil.rmtree(self.max_model_dir)
-
-            self.max_model_dir = osp.join(self.args.output_dir, f"epoch{epoch}_{self.max_metric:.4f}")
-            os.makedirs(self.max_model_dir)
-            save_model_path = osp.join(
-                self.max_model_dir, "model_state.pdparams")
+            save_model_path = os.path.join(self.checkpoint_dir, f"epoch{epoch}_{self.max_metric:.3f}.pth")
             torch.save(self.model.state_dict(), save_model_path)
-            print("Model saved at:", save_model_path)
+            print(f"Epoch={epoch}:", save_model_path)
 
     def train(self, epoch):
         raise NotImplementedError("Must implement train method.")
@@ -100,21 +93,20 @@ class BaseTrainer(object):
         raise NotImplementedError("Must implement eval method.")
 
 
-class SeqClsTrainer(BaseTrainer):
+class NCfoldTrainer(BaseTrainer):
     def train(self, epoch):
         self.model.train()
         time_st = time.time()
         num_total, loss_total = 0, 0
 
-        with tqdm(total=len(self.train_dataset), disable=self.args.disable_tqdm) as pbar:
+        with tqdm(total=len(self.train_dataset)) as pbar:
             for i, data in enumerate(self.train_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
-                labels = data["labels"].to(self.args.device)
                 mat = data["mat"].to(self.args.device)
-
-                logits = self.model(input_ids, mat)
-                loss = self.loss_fn(logits, labels)
-
+                label_edge = data["label_edge"].to(self.args.device)
+                label_orient = data["label_orient"].to(self.args.device)
+                pred_edge, pred_orient = self.model(input_ids, mat)
+                loss, loss_edge, loss_orient = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
                 # clear grads
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -126,79 +118,75 @@ class SeqClsTrainer(BaseTrainer):
 
                 # reset loss if too many steps
                 if num_total >= self.args.logging_steps:
-                    pbar.set_postfix(train_loss='{:.4f}'.format(
-                        loss_total / num_total))
+                    pbar.set_postfix(train_loss='{:.4f}'.format(loss_total / num_total))
                     pbar.update(self.args.logging_steps)
                     num_total, loss_total = 0, 0
-
         time_ed = time.time() - time_st
         print('Train\tLoss: {:.6f}; Time: {:.4f}s'.format(loss.item(), time_ed))
+
 
     def eval(self, epoch):
         self.model.eval()
         time_st = time.time()
         num_total = 0
-        with tqdm(total=len(self.eval_dataset), disable=self.args.disable_tqdm) as pbar:
-            outputs_dataset, labels_dataset = [], []
-            outputs_names, outputs_seqs = [], []
+        outputs_names, outputs_seqs = [], []
+        pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
+        with tqdm(total=len(self.eval_dataset)) as pbar:
             for i, data in enumerate(self.eval_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
-                labels = data["labels"].to(self.args.device)
                 mat = data["mat"].to(self.args.device)
-
                 with torch.no_grad():
-                    logits = self.model(input_ids, mat)
-
+                    pred_edge, pred_orient = self.model(input_ids, mat)
                 num_total += self.args.batch_size
-                outputs_dataset.append(logits)
-                labels_dataset.append(labels)
+                # out_pred = edge_orient_to_basepair(pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy())
+                # out_gt = edge_orient_to_basepair(data["label_edge"], data["label_orient"])
+                pred_edges.append(pred_edge)
+                pred_orients.append(pred_orient)
+                gt_edges.append(data["label_edge"])
+                gt_orients.append(data["label_orient"])
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
-
                 if num_total >= self.args.logging_steps:
                     pbar.update(self.args.logging_steps)
                     num_total = 0
 
-        outputs_dataset = torch.concat(outputs_dataset, axis=0)
-        labels_dataset = torch.concat(labels_dataset, axis=0)
-        # save best model
-        metrics_dataset = self.compute_metrics(outputs_dataset, labels_dataset)
+        xs = [pred_edges, pred_orients, gt_edges, gt_orients]
+        for i in range(len(xs)):
+             xs[i]= torch.concat(xs[i], axis=0)
+        metrics_dataset = self.compute_metrics(*xs)
         self.save_model(metrics_dataset, epoch)
-        pd.DataFrame()
         df = pd.DataFrame({
             "name": outputs_names,
             "seq": outputs_seqs,
-            "true_label": labels_dataset.detach().cpu().numpy(),
-            **{f"class_{i}_logit": outputs_dataset[:, i].detach().cpu().numpy() for i in range(outputs_dataset.shape[1])},
-            "predicted_class": np.argmax(outputs_dataset.detach().cpu().numpy(), axis=1),
+            # TODO
+            # "true_label": labels_dataset.detach().cpu().numpy(),
+            # **{f"class_{i}_logit": outputs_dataset[:, i].detach().cpu().numpy() for i in range(outputs_dataset.shape[1])},
+            # "predicted_class": np.argmax(outputs_dataset.detach().cpu().numpy(), axis=1),
         })
-        df.to_csv(os.path.join(self.args.output_dir, f'test_metric_{epoch}_{self.max_metric:.4f}.csv'), index=False)
+        df.to_csv(os.path.join(self.args.output_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
 
         # log results to screen/bash
         results = {}
         log = 'Test\t' + self.args.dataset + "\t"
-        # log results to visualdl
-        tag_value = defaultdict(float)
-        # extract results
         for k, v in metrics_dataset.items():
-            log += k + ": {" + k + ":.4f}\t"
-            results[k] = v
-            tag = "eval/" + k
-            tag_value[tag] = v
-
+            if 'f1' in k:
+                log += k + ": {" + k + ":.4f}\t"
+                results[k] = v
         time_ed = time.time() - time_st
         print(log.format(**results), "; Time: {:.4f}s".format(time_ed))
 
 
 def get_args():
     parser = argparse.ArgumentParser('Implementation of RNA sequence classification.')
+    # save checkpoint
+    parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     # model args
     parser.add_argument('--model_name', type=str, default="NCfold_model", choices=MODELS)
     parser.add_argument('--hidden_dim', type=int, default=64)
+    parser.add_argument('--num_blocks', type=int, default=16)
     parser.add_argument('--checkpoint_path', type=str)
-    parser.add_argument('--config_path', type=str, default="./configs/")
-    parser.add_argument('--dataset_dir', type=str, default="../data")
-    parser.add_argument('--dataset', type=str, default="NCfold", choices=TASKS)
+    parser.add_argument('--dataset_dir', type=str, default="data")
+    parser.add_argument('--dataset', type=str, default="PDB_NC", choices=DATASETS)
     parser.add_argument('--replace_T', type=bool, default=True)
     parser.add_argument('--replace_U', type=bool, default=False)
     parser.add_argument('--device', type=str, default='cuda')
@@ -206,50 +194,45 @@ def get_args():
     parser.add_argument('--dataloader_num_workers', type=int, default=0)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--train', type=str2bool, default=True)
-    parser.add_argument('--batch_size', type=int, default=32, help='The number of samples used per step & per device.')
+    parser.add_argument('--batch_size', type=int, default=16, help='The number of samples used per step & per device.')
     parser.add_argument('--num_train_epochs', type=int, default=60, help='The number of epoch for training.')
-    parser.add_argument('--metrics', type=str2list, default="F1s,Precision,Recall,Accuracy,Mcc",)
-    # save checkpoint
-    parser.add_argument('--output_dir', type=str)
+    # loss weight
+    parser.add_argument('--weight_edgeW', type=float, default=5)
+    parser.add_argument('--weight_edgeH', type=float, default=20)
+    parser.add_argument('--weight_edgeS', type=float, default=20)
+    parser.add_argument('--weight_trans', type=float, default=20)
+    parser.add_argument('--weight_cis', type=float, default=20)
     args = parser.parse_args()
     return args
 
 
-if __name__ == "__main__":
+def train_and_test():
     args = get_args()
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
 
     if args.model_name == "NCfold_model":
-        model = NCfold_model(d_model=args.hidden_dim)
+        model = NCfold_model(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
     else:
         raise ValueError("Unknown model name: {}".format(args.model_name))
+    os.makedirs(args.output_dir, exist_ok=True)
     model.to(args.device)
     count_para(model)
 
-    _loss_fn = NucClsLoss().to(args.device)
-    if args.output_dir is None:
-        run_name = os.path.basename(args.checkpoint_path)
-        run_name = run_name[:run_name.rfind('.')]
-        args.output_dir = os.path.join('outputs', run_name)
-    os.makedirs(args.output_dir, exist_ok=True)
+    _loss_fn = NCfoldLoss(
+        edge_weight=1.0, 
+        orient_weight=1.0,
+        edge_weights=torch.tensor([1.0, args.weight_edgeW, args.weight_edgeH, args.weight_edgeS]),
+        orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
+    ).to(args.device)
 
-    # ========== Prepare data
-    dataset_train = NucClsDataset(data_dir=args.dataset_dir)
-    dataset_eval = NucClsDataset(data_dir=args.dataset_dirtrain=False)
+    dataset_train = RNAdata(data_dir=args.dataset_dir)
+    dataset_eval = RNAdata(data_dir=args.dataset_dir, train=False)
     print(f'dataset dir: {args.dataset_dir} {args.dataset}')
     print(f'dataset {args.dataset} train:test={len(dataset_train)}:{len(dataset_eval)}') 
-
-    # ========== Create the data collator
-    _collate_fn = NucClsCollator(max_seq_len=args.max_seq_len, replace_T=args.replace_T, replace_U=args.replace_U)
-
-    # ========== Create the learning_rate scheduler (if need) and optimizer
+    ## max_seq_len == None, for setting batch_max_len
+    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U)
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
-
-    # ========== Create the metrics
-    _metric = NucClsMetrics(metrics=args.metrics)
-
-    # ========== Create the trainer
-    seq_cls_trainer = SeqClsTrainer(
+    trainer = NCfoldTrainer(
         args=args,
         model=model,
         train_dataset=dataset_train,
@@ -257,10 +240,13 @@ if __name__ == "__main__":
         data_collator=_collate_fn,
         loss_fn=_loss_fn,
         optimizer=optimizer,
-        compute_metrics=_metric,
+        compute_metrics=compute_metrics,
     )
     if args.train:
         for i_epoch in range(args.num_train_epochs):
             print("Epoch: {}".format(i_epoch))
-            seq_cls_trainer.train(i_epoch)
-            seq_cls_trainer.eval(i_epoch)
+            trainer.train(i_epoch)
+            trainer.eval(i_epoch)
+
+if __name__ == "__main__":
+    train_and_test()

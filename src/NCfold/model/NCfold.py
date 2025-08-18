@@ -114,7 +114,7 @@ class SeqMatFusion(nn.Module):
         self.seq_output_proj = nn.Linear(self.hidden_dim+self.hidden_channels, self.hidden_dim)
         self.mat_output_proj = nn.Conv2d(self.hidden_channels+self.hidden_dim, self.hidden_channels, kernel_size=1)
         
-    def forward(self, seq, mat):
+    def forward(self, seq, mat, seq_mask=None, mat_mask=None):
         # Input shapes: seq (BxLxD), mat (BxCxLxL)
         B, L, _ = seq.shape
         
@@ -141,7 +141,11 @@ class SeqMatFusion(nn.Module):
         seq_mat = torch.einsum('blh,bmh->bhlm', seq_feat, seq_feat)  # BxHxLxL
         fused_mat = torch.cat([mat_feat, seq_mat], dim=1)  # Residual-style fusion
         out_mat = self.mat_output_proj(fused_mat)
-        
+
+        if seq_mask is not None:
+            out_seq = out_seq * seq_mask
+        if mat_mask is not None:
+            out_mat = out_mat * mat_mask
         return out_seq, out_mat
 
 
@@ -170,7 +174,7 @@ class NCfold_model(nn.Module):
         self.final_seq_proj = nn.Linear(seq_dim, out_dim)
         self.final_mat_proj = nn.Conv2d(mat_channels, out_channels, kernel_size=1)
         
-    def forward(self, seq, mat):
+    def forward(self, seq, mat, seq_mask=None, mat_mask=None):
         # token embed
         seq_feat = self.seq_input_embed(seq)
         mat_feat = self.mat_input_proj(mat)
@@ -181,13 +185,12 @@ class NCfold_model(nn.Module):
         
         # Cascaded processing
         for block in self.blocks:
-            seq_feat, mat_feat = block(seq_feat, mat_feat)
+            seq_feat, mat_feat = block(seq_feat, mat_feat, seq_mask, mat_mask)
         
         # Final output
-        out_seq = self.final_seq_proj(seq_feat)
-        out_mat = self.final_mat_proj(mat_feat)
-        
-        return out_seq, out_mat
+        edge = self.final_seq_proj(seq_feat)
+        orient = self.final_mat_proj(mat_feat)
+        return edge, orient
 
 
 if __name__ == "__main__":

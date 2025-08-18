@@ -1,12 +1,8 @@
-import json
-import pickle
+from datetime import datetime
 
-import numpy as np
-
-from src.NCfold.utils.data_processing import prepare_dataset_RNAVIEW_pickle
+from src.NCfold.train_and_test import train_and_test
 
 
 if __name__ == '__main__':
-    data_path = 'data/NC_data.json'
-    dest = 'data/NC_data.pickle'
-    prepare_dataset_RNAVIEW_pickle(dest, data_path)
+    print(f'Time: {datetime.now()}')
+    train_and_test()
