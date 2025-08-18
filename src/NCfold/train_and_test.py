@@ -12,12 +12,12 @@ from torch.utils.data import DataLoader
 
 from .dataset.RNAdata import RNAdata
 from .dataset.collator import NCfoldCollator
-from .model.NCfold import NCfold_model
+from .model.AttnMatFusion_net import AttnMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
 from .util.NCfold_kit import str2bool, str2list, count_para, get_config, edge_orient_to_basepair
 
 
-MODELS = ['NCfold_model']
+MODELS = ['SeqMatFusion_net', 'AttnMatFusion_net']
 DATASETS = ["PDB_NC"]
 
 
@@ -185,7 +185,7 @@ def get_args():
     parser.add_argument('--filter_fasta', type=str, default="NC_seq_mmseqs.fasta")
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     # model args
-    parser.add_argument('--model_name', type=str, default="NCfold_model", choices=MODELS)
+    parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
     parser.add_argument('--hidden_dim', type=int, default=64)
     parser.add_argument('--num_blocks', type=int, default=16)
     parser.add_argument('--checkpoint_path', type=str)
@@ -213,8 +213,8 @@ def train_and_test():
     args = get_args()
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
 
-    if args.model_name == "NCfold_model":
-        model = NCfold_model(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
+    if args.model_name == "AttnMatFusion_net":
+        model = AttnMatFusion_net(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
     else:
         raise ValueError("Unknown model name: {}".format(args.model_name))
     os.makedirs(args.output_dir, exist_ok=True)
