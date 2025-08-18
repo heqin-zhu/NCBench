@@ -47,17 +47,17 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
     Returns:
         metrics_dict: F1
     """
+    batched = len(edge_true.shape)==2
     # predicted class: argmax
     edge_pred_class = torch.argmax(edge_pred, dim=-1)  # (B, L)
     # flatting for convenient computation of metrics
     edge_pred_flat = edge_pred_class.view(-1).cpu().numpy()
     edge_true_flat = edge_true.view(-1).cpu().numpy()
 
-    orient_pred_class = torch.argmax(orient_pred, dim=1)  # (B, L, L)
+    orient_pred_class = torch.argmax(orient_pred, dim=1 if batched else 0)  # (B, L, L)
     orient_pred_flat = orient_pred_class.view(-1).cpu().numpy()
     orient_true_flat = orient_true.view(-1).cpu().numpy()
     ret = {}
-
     for flag, pred, gt in [('edge', edge_pred_flat, edge_true_flat), ('orient', orient_pred_flat, orient_true_flat)]:
     
         valid_mask = (gt!=-1)
@@ -65,7 +65,7 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
         gt = gt[valid_mask]
         ret[f'{flag}_mcc'] = metrics.matthews_corrcoef(gt, pred)
         ret[f'{flag}_acc'] = metrics.accuracy_score(gt, pred)
-        ret[f'{flag}_p'] = metrics.precision_score(gt, pred, average=average)
+        ret[f'{flag}_p'] = metrics.precision_score(gt, pred, average=average, zero_division=0)
         ret[f'{flag}_r'] = metrics.recall_score(gt, pred, average=average)
         ret[f'{flag}_f1'] = metrics.f1_score(gt, pred, average=average)
         # TODO

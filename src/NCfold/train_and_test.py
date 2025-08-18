@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from .dataset.RNAdata import RNAdata
 from .dataset.collator import NCfoldCollator
 from .model.AttnMatFusion_net import AttnMatFusion_net
+from .model.SeqMatFusion_net import SeqMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
 from .util.NCfold_kit import str2bool, str2list, count_para, get_config, edge_orient_to_basepair
 
@@ -82,7 +83,7 @@ class BaseTrainer(object):
         os.makedirs(checkpoint_dir, exist_ok=True)
         if metrics_dataset[self.name_pbar] > self.max_metric:
             self.max_metric = metrics_dataset[self.name_pbar]
-            save_model_path = os.path.join(self.checkpoint_dir, f"epoch{epoch}_{self.max_metric:.3f}.pth")
+            save_model_path = os.path.join(checkpoint_dir, f"epoch{epoch}_{self.max_metric:.3f}.pth")
             torch.save(self.model.state_dict(), save_model_path)
             print(f"Epoch={epoch}:", save_model_path)
 
@@ -117,10 +118,10 @@ class NCfoldTrainer(BaseTrainer):
                 num_total += self.args.batch_size
                 loss_total += loss.item()
 
+                pbar.set_postfix(train_loss='{:.4f}'.format(loss_total / num_total))
+                pbar.update(self.args.logging_steps)
                 # reset loss if too many steps
                 if num_total >= self.args.logging_steps:
-                    pbar.set_postfix(train_loss='{:.4f}'.format(loss_total / num_total))
-                    pbar.update(self.args.logging_steps)
                     num_total, loss_total = 0, 0
         time_ed = time.time() - time_st
         print('Train\tLoss: {:.6f}; Time: {:.4f}s'.format(loss.item(), time_ed))
@@ -141,30 +142,39 @@ class NCfoldTrainer(BaseTrainer):
                 num_total += self.args.batch_size
                 # out_pred = edge_orient_to_basepair(pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy())
                 # out_gt = edge_orient_to_basepair(data["label_edge"], data["label_orient"])
-                pred_edges.append(pred_edge)
-                pred_orients.append(pred_orient)
-                gt_edges.append(data["label_edge"])
-                gt_orients.append(data["label_orient"])
+                pred_edges += [b for b in pred_edge] # batch
+                pred_orients += [b for b in pred_orient]
+                gt_edges += [b for b in data["label_edge"]]
+                gt_orients += [b for b in data["label_orient"]]
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:
-                    pbar.update(self.args.logging_steps)
                     num_total = 0
+                pbar.update(self.args.logging_steps)
 
         xs = [pred_edges, pred_orients, gt_edges, gt_orients]
-        for i in range(len(xs)):
-             xs[i]= torch.concat(xs[i], axis=0)
-        metrics_dataset = self.compute_metrics(*xs)
+        metric_dic_list = [self.compute_metrics(*x) for x in zip(*xs)]
+        df_data = []
+        for name, seq, pred_edge, pred_orient, gt_edge, gt_orient, metric_dic in zip(outputs_names, outputs_seqs, pred_edges, pred_orients, gt_edges, gt_orients, metric_dic_list):
+            df_data.append({
+                            'name': name, 
+                            'seq': seq,
+                            'pred_edge': pred_edge,
+                            # 'pred_orient': pred_orient, # TODO
+                            'gt_edge': gt_edge,
+                            # 'gt_orient': gt_orient, # TODO
+                            **metric_dic,
+                          })
+        metrics_dataset = {}
+        for metric_dic in metric_dic_list:
+            for k, v in metric_dic.items():
+                if k not in metrics_dataset:
+                    metrics_dataset[k] = []
+                metrics_dataset[k].append(v)
+        metrics_dataset = {k: sum(v)/len(v) for k, v in metrics_dataset.items()}
+
         self.save_model(metrics_dataset, epoch)
-        df = pd.DataFrame({
-            "name": outputs_names,
-            "seq": outputs_seqs,
-            # TODO
-            # "true_label": labels_dataset.detach().cpu().numpy(),
-            # **{f"class_{i}_logit": outputs_dataset[:, i].detach().cpu().numpy() for i in range(outputs_dataset.shape[1])},
-            # "predicted_class": np.argmax(outputs_dataset.detach().cpu().numpy(), axis=1),
-        })
-        df.to_csv(os.path.join(self.args.output_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
+        pd.DataFrame(df_data).to_csv(os.path.join(self.args.output_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
 
         # log results to screen/bash
         results = {}
@@ -186,9 +196,10 @@ def get_args():
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
-    parser.add_argument('--hidden_dim', type=int, default=64)
-    parser.add_argument('--num_blocks', type=int, default=16)
+    parser.add_argument('--hidden_dim', type=int, default=256)
+    parser.add_argument('--num_blocks', type=int, default=12)
     parser.add_argument('--checkpoint_path', type=str)
+    parser.add_argument('--use_BPM', type=bool, default=True)
     parser.add_argument('--replace_T', type=bool, default=True)
     parser.add_argument('--replace_U', type=bool, default=False)
     parser.add_argument('--device', type=str, default='cuda')
@@ -212,16 +223,27 @@ def get_args():
 def train_and_test():
     args = get_args()
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
+    if args.logging_steps is None:
+        args.logging_steps = 1500//args.batch_size
+    print(args)
 
     if args.model_name == "AttnMatFusion_net":
-        model = AttnMatFusion_net(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
+        model = AttnMatFusion_net(
+                                  max_seq_len=args.max_seq_len, 
+                                  out_dim=4, 
+                                  out_channels=3,
+                                  dim=args.hidden_dim, 
+                                  depth=args.num_blocks, 
+                                  positional_embedding='rope', 
+                                  use_BPM=True
+                                 )
+    elif args.model_name == "SeqMatFusion_net":
+        model = SeqMatFusion_net(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
     else:
         raise ValueError("Unknown model name: {}".format(args.model_name))
     os.makedirs(args.output_dir, exist_ok=True)
     model.to(args.device)
     count_para(model)
-    if args.logging_steps is None:
-        args.logging_steps = 1500//args.batch_size
 
     _loss_fn = NCfoldLoss(
         edge_weight=1.0, 
