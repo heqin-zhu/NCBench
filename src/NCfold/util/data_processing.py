@@ -11,6 +11,58 @@ import numpy as np
 from BPfold.util.RNA_kit import read_fasta
 
 
+orient_type_dic = {
+                   # no-pair: 0
+                   'tran': 1,
+                   'cis': 2,
+                  }
+edge_type_dic = {
+                # no-edge: 0
+               'W': 1,
+               '+': 1,
+               '-': 1,
+               'H': 2,
+               'S': 3,
+                }
+orient_index_dic = {
+                    1: 'tran',
+                    2: 'cis',
+                  }
+edge_index_dic = {
+                  1: 'W',
+                  2: 'H',
+                  3: 'S',
+                }
+
+def edge_orient_to_basepair(edge, orient):
+    ret = []
+    L = len(edge)
+    for i in range(L):
+        for j in range(i+2, L):
+            if orient[i][j]>0:
+                ret.append((i, j, edge_index_dic[edge[i]], edge_index_dic[edge[j]], orient_index_dic[orient[i][j]]))
+    return ret
+
+
+def edge_orient_to_basepair_batch(edge, orient):
+    def get_pred_edge(edge_arr):
+        # Lx4
+        return np.argmax(edge_arr[:, 1:], axis=-1)+1 # ignore class 0, TODO
+
+    shape = np.array(edge).shape
+    if len(shape)==1:
+        return edge_orient_to_basepair(edge, orient)
+    elif len(shape)==2:
+        if shape[-1] == 4:
+            return edge_orient_to_basepair(get_pred_edge(edge), np.argmax(orient, axis=0))
+        else:
+            return [edge_orient_to_basepair(edge[i], orient[i]) for i in range(shape[0])]
+    elif len(edge.shape)==3:
+        return [edge_orient_to_basepair(get_pred_edge(edge[i]), np.argmax(orient[i], axis=0)) for i in range(shape[0])]
+    else:
+        raise Exception(f'[Error] edge shape:{edge.shape}')
+
+
 def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
     tmp_dir = 'tmp'
     os.makedirs(tmp_dir, exist_ok=True)
@@ -164,19 +216,6 @@ def construct_RNAVIEW_labels(data_dic, verbose=False):
     info = data_dic['pair_info']
     seq = data_dic['seq'].upper()
     L = len(seq)
-    orient_type_dic = {
-                       # no-pair: 0
-                       'tran': 1,
-                       'cis': 2,
-                      }
-    edge_type_dic = {
-                    # no-edge: 0
-                   'W': 1,
-                   '+': 1,
-                   '-': 1,
-                   'H': 2,
-                   'S': 3,
-                    }
     labels = {
             # LxL orient matrix: 0 for no-pair, 1 for trans, 2 for cis
             # 1xL edge array: 0 for no-edge, 1 for Watson-crick, 2 for Hoogesteen, 3 for Sugar.

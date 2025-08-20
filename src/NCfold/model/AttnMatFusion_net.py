@@ -171,7 +171,8 @@ class MultiHeadSelfAttention(nn.Module):
 
         if mat_mask is not None:
             valid_mask = mat_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)  # (b, num_heads, l, l)
-            attention = attention.masked_fill(~valid_mask, -1e9)
+            fill_value = torch.finfo(attention.dtype).min
+            attention = attention.masked_fill(~valid_mask, fill_value)
 
         attention = attention.softmax(dim=-1) # b, a, l, l, softmax won't change shape
         out = attention @ V  # b, a, l, head

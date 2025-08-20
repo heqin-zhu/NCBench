@@ -17,7 +17,8 @@ from .dataset.collator import NCfoldCollator
 from .model.AttnMatFusion_net import AttnMatFusion_net
 from .model.SeqMatFusion_net import SeqMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
-from .util.NCfold_kit import str2bool, str2list, count_para, get_config, edge_orient_to_basepair
+from .util.NCfold_kit import str2bool, str2list, count_para, get_config
+from .util.data_processing import edge_orient_to_basepair_batch
 
 
 MODELS = ['SeqMatFusion_net', 'AttnMatFusion_net']
@@ -134,6 +135,7 @@ class NCfoldTrainer(BaseTrainer):
         num_total = 0
         outputs_names, outputs_seqs = [], []
         pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
+        out_preds, out_gts = [], []
         with tqdm(total=len(self.eval_dataset)) as pbar:
             for i, data in enumerate(self.eval_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
@@ -141,8 +143,11 @@ class NCfoldTrainer(BaseTrainer):
                 with torch.no_grad():
                     pred_edge, pred_orient = self.model(input_ids, mat)
                 num_total += self.args.batch_size
-                # out_pred = edge_orient_to_basepair(pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy())
-                # out_gt = edge_orient_to_basepair(data["label_edge"], data["label_orient"])
+                # TODO postprocess
+                out_pred = edge_orient_to_basepair_batch(pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy())
+                out_gt = edge_orient_to_basepair_batch(data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy())
+                out_preds.append(out_pred)
+                out_gts.append(out_gt)
                 pred_edges += [b for b in pred_edge] # batch
                 pred_orients += [b for b in pred_orient]
                 gt_edges += [b for b in data["label_edge"]]
@@ -156,14 +161,12 @@ class NCfoldTrainer(BaseTrainer):
         xs = [pred_edges, pred_orients, gt_edges, gt_orients]
         metric_dic_list = [self.compute_metrics(*x) for x in zip(*xs)]
         df_data = []
-        for name, seq, pred_edge, pred_orient, gt_edge, gt_orient, metric_dic in zip(outputs_names, outputs_seqs, pred_edges, pred_orients, gt_edges, gt_orients, metric_dic_list):
+        for name, seq, out_pred, out_gt, metric_dic in zip(outputs_names, outputs_seqs, out_preds, out_gts, metric_dic_list):
             df_data.append({
                             'name': name, 
                             'seq': seq,
-                            'pred_edge': pred_edge,
-                            # 'pred_orient': pred_orient, # TODO
-                            'gt_edge': gt_edge,
-                            # 'gt_orient': gt_orient, # TODO
+                            'pred': out_pred,
+                            'gt': out_gt,
                             **metric_dic,
                           })
         metrics_dataset = {}
