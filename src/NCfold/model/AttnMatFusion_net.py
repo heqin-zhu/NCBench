@@ -169,11 +169,15 @@ class MultiHeadSelfAttention(nn.Module):
                 adj = self.gamma * adj
             attention = attention + adj
 
-        attention = attention.softmax(dim=-1) # b, a, l, l, softmax won't change shape
         if mat_mask is not None:
-            attention = attention * (mat_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1))
+            valid_mask = mat_mask.unsqueeze(1).repeat(1, self.num_heads, 1, 1)  # (b, num_heads, l, l)
+            attention = attention.masked_fill(~valid_mask, -1e9)
+
+        attention = attention.softmax(dim=-1) # b, a, l, l, softmax won't change shape
         out = attention @ V  # b, a, l, head
         out = out.permute(0,2,1,3).flatten(2,3) # b, a, l, head -> b, l, (a, head) -> b, l, hidden
+        # out_w is defined as Parameter, use matrix op instead of linear layer: (self.out_proj(out))
+        out = out @ self.out_w  # linear transformation, fuse multi-head feature
         if self.bias:
             out = out + self.out_bias
         if return_attn_weights:
