@@ -136,6 +136,8 @@ class NCfoldTrainer(BaseTrainer):
         outputs_names, outputs_seqs = [], []
         pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
         out_preds, out_gts = [], []
+        raw_out_dir = os.path.join(self.args.output_dir, 'out_npy')
+        os.makedirs(raw_out_dir, exist_ok=True)
         with tqdm(total=len(self.eval_dataset)) as pbar:
             for i, data in enumerate(self.eval_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
@@ -143,15 +145,20 @@ class NCfoldTrainer(BaseTrainer):
                 with torch.no_grad():
                     pred_edge, pred_orient = self.model(input_ids, mat)
                 num_total += self.args.batch_size
-                # TODO postprocess
-                out_pred = edge_orient_to_basepair_batch(pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy())
-                out_gt = edge_orient_to_basepair_batch(data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy())
-                out_preds.append(out_pred)
-                out_gts.append(out_gt)
                 pred_edges += [b for b in pred_edge] # batch
                 pred_orients += [b for b in pred_orient]
                 gt_edges += [b for b in data["label_edge"]]
                 gt_orients += [b for b in data["label_orient"]]
+                # TODO postprocess
+                pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
+                gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
+                for i in range(len(pred_edge_np)):
+                    name = data["name"][i]
+                    np.savez(os.path.join(raw_out_dir, f'{name}_pred.npz'), edge=pred_edge_np[i], orient=pred_orient_np[i])
+                    np.savez(os.path.join(raw_out_dir, f'{name}_gt.npz'), edge=gt_edge_np[i], orient=gt_orient_np[i])
+
+                out_preds.append(edge_orient_to_basepair_batch(pred_edge_np, pred_orient_np))
+                out_gts.append(edge_orient_to_basepair_batch(gt_edge_np, gt_orient_np))
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:
