@@ -237,7 +237,7 @@ def get_args():
 
 
 def train_and_test():
-    print(f'Time: {datetime.now()}')
+    print(f'Begin time: {datetime.now()}')
     args = get_args()
     assert args.replace_T ^ args.replace_U, "Only replace T or U."
     if args.logging_steps is None:
@@ -289,6 +289,7 @@ def train_and_test():
         for i_epoch in range(args.num_train_epochs):
             trainer.train(i_epoch)
             trainer.eval(i_epoch)
+    print(f'End time: {datetime.now()}')
 
 if __name__ == "__main__":
     train_and_test()
