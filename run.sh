@@ -1,2 +1,2 @@
-python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir ./data --filter_fasta NC_seq_mmseqs.fasta --batch_size 32 --hidden_dim 128 --num_blocks 12 --output_dir .runs/NCfold
-# python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir ./data --filter_fasta fast_test.fasta --batch_size 32 --hidden_dim 128 --num_blocks 12 --output_dir .runs/tmp
+# python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir ./data --filter_fasta NC_seq_mmseqs.fasta --batch_size 32 --hidden_dim 128 --num_blocks 12 --output_dir .runs/NCfold
+python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir ./data --filter_fasta fast_test.fasta --batch_size 32 --hidden_dim 128 --num_blocks 12 --output_dir .runs/tmp

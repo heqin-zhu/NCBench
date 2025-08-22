@@ -190,7 +190,7 @@ class MultiHeadSelfAttention(nn.Module):
 class TransformerEncoderLayer(nn.Module):
     def __init__(self,
                  hidden_dim: int,
-                 positional_embedding: str='rope',
+                 positional_embedding: str='alibi',
                  num_heads: int = None,
                  dropout: float = 0.10,
                  ffn_size: int = None,
@@ -238,7 +238,7 @@ class TransformerEncoderLayer(nn.Module):
 class FuseFormer(nn.Module):
     def __init__(self,
                  dim: int  = 256,
-                 positional_embedding: str='rope',
+                 positional_embedding: str='alibi',
                  head_size: int = 32,
                  dropout: float = 0.10,
                  dim_feedforward: int = 192 * 4,
@@ -292,7 +292,7 @@ class AttnMatFusion_net(nn.Module):
                  out_channels=3,
                  dim=256, 
                  depth=12,
-                 positional_embedding: str='rope',
+                 positional_embedding: str='alibi',
                  head_size=32,
                  use_SE=True,
                  use_BPM=True,
@@ -349,7 +349,7 @@ if __name__ == '__main__':
            'depth': 12,
            'dim': 256,
            'head_size': 32,
-           'positional_embedding': 'rope', # 'dyn', # alibi
+           'positional_embedding': 'alibi', # 'dyn', # alibi
            'use_SE': True,
            'out_dim': 4,
            'out_channels': 3,
@@ -380,4 +380,3 @@ if __name__ == '__main__':
     sys.path.append('../util')
     from NCfold_kit import count_para
     count_para(model)
-    
