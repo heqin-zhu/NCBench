@@ -206,7 +206,7 @@ def prepare_dataset_RNAVIEW_json(dest, pdb_dir):
             json.dump(data, fp)
 
 
-def construct_RNAVIEW_labels(data_dic, verbose=False):
+def construct_RNAVIEW_labels(data_dic, verbose=False, include_canonical=False):
     '''
         data_dic:
             seq: str
@@ -240,6 +240,8 @@ def construct_RNAVIEW_labels(data_dic, verbose=False):
             labels['stack'][left][right] = labels['stack'][right][left] = 1
         else: # pair intercation
             left_edge, _, right_edge = dic['edge_type']
+            if not include_canonical and all(edge in 'W+-' for edge in [left_edge, right_edge]) and orientation=='tran': ## canonical
+                continue
             if orientation in ['cis', 'tran'] and all(edge in 'WHS+-' for edge in [left_edge, right_edge]):
                 labels['pair']['orient_mat'][left][right] = labels['pair']['orient_mat'][right][left] = orient_type_dic[orientation]
                 labels['pair']['edge_arr'][left] = edge_type_dic[left_edge]
@@ -250,7 +252,7 @@ def construct_RNAVIEW_labels(data_dic, verbose=False):
     return {'labels': labels, 'pair_types': pair_types}
 
 
-def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None):
+def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include_canonical=False):
     with open(data_path) as fp:
         json_data = json.load(fp)
     index_dest = data_path[:data_path.rfind('.')]+'_index.json'
@@ -262,7 +264,7 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None):
     for dic in json_data:
         name = dic['name']
         seq = dic['seq']
-        d = construct_RNAVIEW_labels(dic)
+        d = construct_RNAVIEW_labels(dic, include_canonical=include_canonical)
         if d is None or len(seq)==0 or len(d['labels'])==0:
             error_ct+=1
         else:

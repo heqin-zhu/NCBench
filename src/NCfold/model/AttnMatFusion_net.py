@@ -296,6 +296,7 @@ class AttnMatFusion_net(nn.Module):
                  head_size=32,
                  use_SE=True,
                  use_BPM=True,
+                 LM_list=None,
                  *args,
                  **kargs,
                  ):
@@ -306,6 +307,26 @@ class AttnMatFusion_net(nn.Module):
         self.use_BPM = use_BPM
         ## token embed
         self.seq_input_embed = nn.Embedding(6, dim)
+
+        ## LM embed
+        self.LM_list = LM_list
+        if self.LM_list is None:
+            self.LM_list = []
+        self.LM_linear = []
+        total_dim = dim
+        LM_dim_map = {
+                      'structRFM': 768,
+                     }
+        for LM_name in self.LM_list:
+            LM_dim = LM_dim_map[LM_name]
+            total_dim += LM_dim
+            if LM_name == 'structRFM':
+                self.LM_linear.append(nn.Linear(LM_dim, dim))
+            else:
+                raise Exception(f'Unknown LM name: {LM_name}')
+        self.LM_linear = nn.ModuleList(self.LM_linear)
+        self.fuse_LM_seq_linear = nn.Linear(total_dim, dim) if self.LM_list else nn.Identity()
+
         ## positional embedding
         if positional_embedding=='rope':
             self.seq_rope = RoPE(dim=dim, max_seq_len=max_seq_len)
@@ -327,9 +348,15 @@ class AttnMatFusion_net(nn.Module):
         self.final_mat_proj = ResConv2dSimple(num_heads, out_c=out_channels, kernel_size=3, use_SE=use_SE)
 
             
-    def forward(self, seq, mat=None, seq_mask=None, mat_mask=None):
+    def forward(self, seq, mat=None, seq_mask=None, mat_mask=None, LM_embed_dic=None):
         # token embed
         seq = self.seq_input_embed(seq)
+        ## LM
+        LM_feats = [seq]
+        for LM_name in self.LM_list:
+            LM_feats.append(self.LM_linear[LM_name](LM_embed_dic[LM_name]))
+        seq = self.fuse_LM_seq_linear(torch.cat(LM_feats, dim=-1))
+
         # positional embedding
         if self.positional_embedding == 'rope':
             seq = self.seq_rope(seq)

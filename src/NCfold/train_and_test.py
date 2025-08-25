@@ -109,7 +109,8 @@ class NCfoldTrainer(BaseTrainer):
                 mat = data["mat"].to(self.args.device)
                 label_edge = data["label_edge"].to(self.args.device)
                 label_orient = data["label_orient"].to(self.args.device)
-                pred_edge, pred_orient = self.model(input_ids, mat)
+                LM_embed_dic = {k: v.to(self.args.device) for k, v in data['LM_embed_dic'].items()}
+                pred_edge, pred_orient = self.model(input_ids, mat, LM_embed_dic=LM_embed_dic)
                 loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
                 loss = loss_dic['loss']
                 # clear grads
@@ -142,14 +143,15 @@ class NCfoldTrainer(BaseTrainer):
             for i, data in enumerate(self.eval_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
                 mat = data["mat"].to(self.args.device)
+                LM_embed_dic = {k: v.to(self.args.device) for k, v in data['LM_embed_dic'].items()}
                 with torch.no_grad():
-                    pred_edge, pred_orient = self.model(input_ids, mat)
+                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed_dic=LM_embed_dic)
                 num_total += self.args.batch_size
                 pred_edges += [b for b in pred_edge] # batch
                 pred_orients += [b for b in pred_orient]
                 gt_edges += [b for b in data["label_edge"]]
                 gt_orients += [b for b in data["label_orient"]]
-                # TODO postprocess
+                # TODO postprocess  args.include_canonical
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
                 for i in range(len(pred_edge_np)):
@@ -210,6 +212,9 @@ def get_args():
     parser.add_argument('--dataset', type=str, default="PDB_NC", choices=DATASETS)
     parser.add_argument('--filter_fasta', type=str, default="NC_seq_mmseqs.fasta")
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
+    parser.add_argument('--include_canonical', action='store_true')
+    parser.add_argument('--LM_list', nargs='*', choices=['structRFM', 'RNA-FM'])
+    parser.add_argument('--LM_checkpoint_dir', type=str, default='LM_checkpoint', help='LM checkpoint_dir, each LM is placed in a subdir of same name.')
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
     parser.add_argument('--hidden_dim', type=int, default=256)
@@ -269,11 +274,11 @@ def train_and_test():
         orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
     ).to(args.device)
 
-    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta)
-    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=False)
+    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, include_canonical=args.include_canonical)
+    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=False, include_canonical=args.include_canonical)
     print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:test={len(dataset_train)}:{len(dataset_eval)}') 
     ## max_seq_len == None, for setting batch_max_len
-    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U)
+    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir)
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
     trainer = NCfoldTrainer(
         args=args,
