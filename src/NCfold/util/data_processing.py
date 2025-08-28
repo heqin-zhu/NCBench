@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 
 from BPfold.util.RNA_kit import read_fasta
+from BPfold.util.misc import get_file_name
 
 
 orient_type_dic = {
@@ -74,18 +75,12 @@ def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
         return seq, ss
 
 
-def run_RNAVIEW(dest, data_dir):
-    os.makedirs(dest, exist_ok=True)
-    for f in os.listdir(data_dir):
-        if len(f)==8 and f.endswith('.pdb'):
-            name = f[:f.rfind('.')]
-            src_path = os.path.join(data_dir, f)
-            dest_path = os.path.join(dest, name+'.txt')
-            if not os.path.exists(dest_path) or os.path.getsize(dest_path)==0:
-                cmd = f'rnaview {src_path} > {dest_path} 2>&1'
-                print(cmd)
-                continue
-                os.system(cmd)
+def get_seq_from_xml_by_RNAVIEW(path):
+    pattern = r'<seq-data>\s+(?P<seq>[A-Za-z ]+)\s+</seq-data>'
+    with open(path) as fp:
+        text = fp.read()
+        for f in re.findall(pattern, text):
+            return f.replace(' ', '')
 
 
 def get_connSS_from_PDB_by_RNAVIEW(pdb_path):
@@ -117,43 +112,57 @@ def get_connSS_from_PDB_by_RNAVIEW(pdb_path):
     return connects
 
 
-def parse_RNAVIEW_out(pdb_path, dest='.', save_info=False):
-    '''
-        pdb_path: *.pdb
-        file_path: *.pdb.out, after run `RNAVIEW *.pdb`
-    '''
-    pattern = r'\s+(?P<left>\d+)_(?P<right>\d+),.*?(?P<pair>[augctAUGCT]\-[augctAUGCT]).*?: (?P<edge_type>[\+\-WHS]/[\+\-WHS]|\s+) +(?P<orientation>cis|tran|stacked).*?(?P<class_id>[IVX]+|n/a|!.*?\(.*?\)|)\n'
+def run_RNAVIEW(pdb_path):
+    CMD = f'rnaview {pdb_path}'
+    p = subprocess.Popen(CMD, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    # text = p.stdout.read()
+    # p.stdout.close()
+    return p
 
-    length_pattern = r'The total base pairs =\s+\d+ \(from\s+(?P<length>\d+) bases\)'
-    file_path = pdb_path + '.out'
+
+def parse_RNAVIEW_out(file_path, save_info=False, run_failed=False):
+    '''
+        file_path: *.pdb.out, after run `RNAVIEW *.pdb`
+        gen: *.pdb.json
+    '''
     if not os.path.exists(file_path):
-        CMD = f'rnaview {pdb_path}'
-        res = subprocess.Popen(CMD, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        # text = res.stdout.read()
-        # res.stdout.close()
-    with open(file_path) as fp:
-        text = fp.read()
-    length = None
-    for L in re.findall(length_pattern, text):
-        length = int(L)
-    info = []
-    for left, right, pair, edge_type, orientation, class_id  in re.findall(pattern, text):
-        info.append({
-                     'left': int(left),
-                     'right': int(right),
-                     'edge_type': edge_type,
-                     'orientation': orientation,
-                     'class_id': class_id,
-                     'pair': pair,
-                    })
-    if len(info)!=0 and save_info:
-        os.makedirs(dest, exist_ok=True)
-        name = os.path.basename(pdb_path)
-        name = name[:name.rfind('.')]
-        dest_path = os.path.join(dest, name+'.json')
-        with open(dest_path, 'w') as fp:
-            json.dump(info, fp)
-    return info
+        if run_failed:
+            p = run_RNAVIEW(file_path[:-4])
+            p.join()
+        else:
+            return []
+    name = get_file_name(file_path)
+    dest = os.path.dirname(file_path)
+    dest_path = os.path.join(dest, name+'.json')
+    if os.path.exists(dest_path):
+        with open(dest_path) as fp:
+            info = json.load(fp)
+            return info
+    elif run_failed:
+        pattern = r'\s+(?P<left>\d+)_(?P<right>\d+),.*?(?P<pair>[augctAUGCT]\-[augctAUGCT]).*?: (?P<edge_type>[\+\-WHS]/[\+\-WHS]|\s+) +(?P<orientation>cis|tran|stacked).*?(?P<class_id>[IVX]+|n/a|!.*?\(.*?\)|)\n'
+
+        length_pattern = r'The total base pairs =\s+\d+ \(from\s+(?P<length>\d+) bases\)'
+        with open(file_path) as fp:
+            text = fp.read()
+        length = None
+        for L in re.findall(length_pattern, text):
+            length = int(L)
+        info = []
+        for left, right, pair, edge_type, orientation, class_id  in re.findall(pattern, text):
+            info.append({
+                         'left': int(left),
+                         'right': int(right),
+                         'edge_type': edge_type,
+                         'orientation': orientation,
+                         'class_id': class_id,
+                         'pair': pair,
+                        })
+        if len(info)!=0 and save_info:
+            with open(dest_path, 'w') as fp:
+                json.dump(info, fp)
+        return info
+    else:
+        return []
 
 
 def cif2pdb(src, dest):
@@ -164,7 +173,6 @@ def cif2pdb(src, dest):
     io = PDBIO()
     io.set_structure(structure)
     io.save(dest)
-
 
 
 def prepare_dataset_onepiece(dest, data_dir, rerun=False):
@@ -185,23 +193,32 @@ def prepare_dataset_onepiece(dest, data_dir, rerun=False):
     return df
 
 
-def prepare_dataset_RNAVIEW_json(dest, pdb_dir):
+def prepare_dataset_RNAVIEW_json(dest, pdb_dir, filter_fasta=None, rerun=False):
     if not dest.endswith('.json'):
         dest = dest+'.json'
-    if not os.path.exists(dest):
+    if not os.path.exists(dest) or rerun:
         data = []
-        files = [f for f in os.listdir(pdb_dir) if len(f)==8 and f.endswith('.pdb')]
-        for f in tqdm(files):
-            name = f[:f.rfind('.')]
-            pdb_path = os.path.join(pdb_dir, f)
-            seq, ss = get_seq_and_SS_from_PDB_by_onepiece(pdb_path)
-            info = parse_RNAVIEW_out(pdb_path)
-            if len(info)!=0:
-                data.append({
-                              'name': name,
-                              'seq': seq,
-                              'pair_info': info,
-                             })
+        pdb_paths = [os.path.join(pdb_dir, f) for f in os.listdir(pdb_dir) if (not f.endswith('_tmp.pdb')) and f.endswith('.pdb')]
+        # ps = []
+        # for pdb_path in tqdm(pdb_paths):
+        #     ps.append(run_RNAVIEW(pdb_path))
+        # for p in ps:
+        #     if p is not None:
+        #         p.wait()
+        filter_names = None
+        if filter_fasta:
+            filter_names = [name for name, seq in read_fasta(filter_fasta)]
+        for pdb_path in tqdm(pdb_paths):
+            name = get_file_name(pdb_path)
+            if filter_names and name in filter_names:
+                seq = get_seq_from_xml_by_RNAVIEW(pdb_path+'.xml')
+                info = parse_RNAVIEW_out(pdb_path+'.out', save_info=True)
+                if len(info)!=0:
+                    data.append({
+                                  'name': name,
+                                  'seq': seq,
+                                  'pair_info': info,
+                                 })
         with open(dest, 'w') as fp:
             json.dump(data, fp)
 
@@ -308,11 +325,10 @@ if __name__ == '__main__':
     # df = prepare_dataset_onepiece(dest, data_dir, rerun=False)
     # print(df)
 
-    # run_RNAVIEW(dest, data_dir) # deprecated
     prepare_dataset_RNAVIEW_json(json_path, data_dir)
     load_dataset_RNAVIEW(json_path)
 
     ## Example
     # pdb_path = os.path.join(data_dir, '3Q51.pdb')
-    # info = parse_RNAVIEW_out(pdb_path, dest='.')
+    # info = parse_RNAVIEW_out(pdb_path+'.out')
     # print(info, len(info))
