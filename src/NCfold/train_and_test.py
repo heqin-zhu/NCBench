@@ -344,6 +344,7 @@ def get_args():
     parser.add_argument('--filter_fasta', type=str, default="NC_seq_mmseqs.fasta")
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     parser.add_argument('--include_canonical', action='store_true')
+    parser.add_argument('--use_RFdiff_data', action='store_true')
     parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=['structRFM', 'RNA-FM'])
     parser.add_argument('--LM_checkpoint_dir', type=str, default='LM_checkpoint', help='LM checkpoint_dir, each LM is placed in a subdir of same name.')
     # model args
@@ -405,9 +406,9 @@ def train_and_test():
         orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
     ).to(args.device)
 
-    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=True, test=False, include_canonical=args.include_canonical)
-    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=False, test=False, include_canonical=args.include_canonical)
-    dataset_test = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, train=False, test=True, include_canonical=args.include_canonical)
+    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='train', include_canonical=args.include_canonical, use_RFdiff_data=args.use_RFdiff_data)
+    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='validate', include_canonical=args.include_canonical)
+    dataset_test = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='test', include_canonical=args.include_canonical)
 
     print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:val:test={len(dataset_train)}:{len(dataset_eval)}:{len(dataset_test)}') 
     ## max_seq_len == None, for setting batch_max_len
