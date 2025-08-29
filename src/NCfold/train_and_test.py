@@ -345,7 +345,7 @@ def get_args():
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     parser.add_argument('--include_canonical', action='store_true')
     parser.add_argument('--use_RFdiff_data', action='store_true')
-    parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=['structRFM', 'RNA-FM'])
+    parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=['structRFM', 'RNAFM', 'RNABERT', 'RNAMSM'])
     parser.add_argument('--LM_checkpoint_dir', type=str, default='LM_checkpoint', help='LM checkpoint_dir, each LM is placed in a subdir of same name.')
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
