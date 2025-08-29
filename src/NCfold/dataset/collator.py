@@ -7,8 +7,7 @@ import torch.nn.functional as F
 from BPfold.util.base_pair_motif import BPM_energy
 
 from ..util.NCfold_kit import Stack
-
-from structRFM.infer import structRFM_infer
+from .LM_embeddings import get_LM_models, get_LM_embedding
 
 
 class BaseCollator(object):
@@ -29,11 +28,10 @@ class NCfoldCollator(BaseCollator):
         self.replace_U = replace_U
         self.base2idx = {'A': 0, 'U':1, 'G':2, 'C':3, 'N':4, 'PAD':5}
         self.BPM = BPM_energy()
-        self.LM_list = LM_list
-        self.LM_checkpoint_dir = LM_checkpoint_dir
+        self.LM_cache_dir = os.path.join(LM_checkpoint_dir, 'embeddings')
         if self.LM_list is not None:
-            self.LM_dic = self.init_LM(self.LM_list)
-            # self.cache_dir = os.path.join(LM_checkpoint_dir, 'embeddings') TODO
+            self.LM_list = LM_list
+            self.LM_dic = get_LM_models(LM_checkpoint_dir, self.LM_list)
         else:
             self.LM_list = []
 
@@ -49,14 +47,15 @@ class NCfoldCollator(BaseCollator):
         LM_embed_dic = {name: [] for name in self.LM_list}
         for idx, raw_data in enumerate(raw_data_b):
             seq = raw_data["seq"]
+            name = raw_data['name']
             L = len(seq)
             seq = seq.upper()
             seq = seq.replace("T", "U") if self.replace_T else seq.replace("U", "T")
             seq_b.append(seq)
             for LM_name in self.LM_list:
-                LM_embed_dic[LM_name].append(self.get_LM_embedding(seq, LM_name))
-            mat_b.append(self.BPM.get_energy(seq)) # TODO, N, unknown?
-            name_b.append(raw_data['name'])
+                LM_embed_dic[LM_name].append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir))
+            mat_b.append(self.BPM.get_energy(seq))
+            name_b.append(name)
             input_text = [base if base in 'AUGC' else 'N' for base in seq]
             input_ids = [self.base2idx[base] for base in input_text]
             input_ids_b.append(input_ids)
@@ -106,24 +105,4 @@ class NCfoldCollator(BaseCollator):
             'seq': seq_b,
             'LM_embed_dic': LM_embed_dic,
             }
-        # for k, v in data_dic.items():
-        #     print(k, v[0], v.shape if k not in ['name', 'seq'] else len(v))
         return data_dic
-
-    def get_LM_embedding(self, seq, LM_name):
-        model = self.LM_dic[LM_name]
-        if LM_name == 'structRFM':
-            return model.extract_feature(seq)['seq_feat']
-        else:
-            raise Exception(f'Unknown LM name: {LM_name}')
-    
-
-    def init_LM(self, LM_list):
-        dic = {}
-        for LM_name in LM_list:
-            if LM_name == 'structRFM':
-                model = structRFM_infer(os.path.join(self.LM_checkpoint_dir, 'structRFM'), max_length=514)
-                dic['structRFM'] = model
-            else:
-                raise Exception(f'Unknown LM name: {LM_name}')
-        return dic
