@@ -1,36 +1,36 @@
-import torch
 import numpy as np
 from IsoScore import IsoScore
 from sklearn.decomposition import PCA
 
-def compute_isoscore_cosine_fused(embeddings: torch.Tensor, 
-                                  pca_dims=[32, 64, 128], 
-                                  top_k=5):
+
+def fuse_embeddings(embeddings, pca_dims=[32, 64, 128], top_k=3):
     """
     Compute IsoScore and cosine similarity after PCA reduction,
-    then select top-k embeddings and fuse them by averaging.
+    then select top-k embeddings
 
     Args:
-        embeddings: torch.Tensor of shape [num_models, L, D]
+        embeddings: list of embeddings
+            [LxD1, LxD2]
         pca_dims: list of target dimensions for PCA
         top_k: number of best embeddings to select
 
     Returns:
-        fused_embedding: torch.Tensor of shape [L, D] (averaged result)
-        selected_embeddings: torch.Tensor of shape [top_k, L, D]
+        fused_embedding: Lx sum(pca_dims)*top_k
+        selected_idxs: [int]
+            idx of selected embeddings
         avg_scores: numpy array of average scores for all models
     """
-    num_models, L, D = embeddings.shape
+    N = len(embeddings)
     scores = {dim: [] for dim in pca_dims}
+    pca_embeddings = {dim: [] for dim in pca_dims}
     
     # Convert to numpy for PCA and IsoScore
-    emb_np = embeddings.detach().cpu().numpy()
-
     for dim in pca_dims:
         pca = PCA(n_components=dim)
-        for i in range(num_models):
-            X = emb_np[i]  # shape [L, D]
+        for i in range(N):
+            X = embeddings[i].detach().cpu().numpy()  # shape [L, D_i]
             X_red = pca.fit_transform(X)  # [L, dim]
+            pca_embeddings[dim].append(X_red)
 
             # IsoScore
             iso_score = IsoScore(X_red).compute()
@@ -45,12 +45,8 @@ def compute_isoscore_cosine_fused(embeddings: torch.Tensor,
 
     # Average score across different PCA dims
     avg_scores = np.mean([scores[dim] for dim in pca_dims], axis=0)
-
     # Select top-k models
     top_idx = np.argsort(avg_scores)[-top_k:]
-    selected_embeddings = embeddings[top_idx]  # [top_k, L, D]
 
-    # Fuse by averaging over selected embeddings
-    fused_embedding = selected_embeddings.mean(dim=0)  # [L, D]
-
-    return fused_embedding, selected_embeddings, avg_scores
+    fused_embedding = np.cat([pca_embeddings[i][dim] for dim in pca_dims for i in top_idx], axis=1) # L x sum(pca_dims)*top_k
+    return fused_embedding, top_idx, avg_scores

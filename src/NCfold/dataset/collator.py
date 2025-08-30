@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from BPfold.util.base_pair_motif import BPM_energy
 
 from ..util.NCfold_kit import Stack
+from .fuse_embeddings import fuse_embeddings
 from .LM_embeddings import get_LM_models, get_LM_embedding
 
 
@@ -19,7 +20,7 @@ class BaseCollator(object):
 
 
 class NCfoldCollator(BaseCollator):
-    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint'):
+    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint', pca_dims=[32, 64, 128], top_k=1):
         super(NCfoldCollator, self).__init__()
         self.max_seq_len = max_seq_len
         # only replace T or U
@@ -29,11 +30,13 @@ class NCfoldCollator(BaseCollator):
         self.base2idx = {'A': 0, 'U':1, 'G':2, 'C':3, 'N':4, 'PAD':5}
         self.BPM = BPM_energy()
         self.LM_cache_dir = os.path.join(LM_checkpoint_dir, 'embeddings')
-        if self.LM_list is not None:
+        if LM_list is not None:
             self.LM_list = LM_list
             self.LM_dic = get_LM_models(LM_checkpoint_dir, self.LM_list)
         else:
             self.LM_list = []
+        self.pca_dims = pca_dims
+        self.top_k = top_k
 
     def __call__(self, raw_data_b):
         input_ids_b = []
@@ -44,7 +47,7 @@ class NCfoldCollator(BaseCollator):
         mat_b = []
         seq_mask = []
         mat_mask = []
-        LM_embed_dic = {name: [] for name in self.LM_list}
+        LM_embed_list = []
         for idx, raw_data in enumerate(raw_data_b):
             seq = raw_data["seq"]
             name = raw_data['name']
@@ -52,8 +55,16 @@ class NCfoldCollator(BaseCollator):
             seq = seq.upper()
             seq = seq.replace("T", "U") if self.replace_T else seq.replace("U", "T")
             seq_b.append(seq)
-            for LM_name in self.LM_list:
-                LM_embed_dic[LM_name].append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir))
+
+            ## LM embed
+            if self.LM_list:
+                cur_LM_embed_list = []
+                for LM_name in self.LM_list:
+                    cur_LM_embed_list.append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir))
+
+                ## Fuse LM embed
+                LM_embed_list.append(fuse_embeddings(cur_LM_embed_list, self.pca_dims, self.top_k))
+
             mat_b.append(self.BPM.get_energy(seq))
             name_b.append(name)
             input_text = [base if base in 'AUGC' else 'N' for base in seq]
@@ -70,8 +81,6 @@ class NCfoldCollator(BaseCollator):
 
         for i_batch in range(len(input_ids_b)):
             L = len(input_ids_b[i_batch])
-
-
             if L > batch_seq_len:
                 input_ids_b[i_batch] = input_ids_b[i_batch][:batch_seq_len]
                 label_edge[i_batch] = label_edge[i_batch][:batch_seq_len]
@@ -79,8 +88,8 @@ class NCfoldCollator(BaseCollator):
                 mat_b[i_batch] = mat_b[i_batch][:, :batch_seq_len, :batch_seq_len]
                 mat_mask[i_batch] = mat_mask[i_batch][:batch_seq_len, :batch_seq_len]
                 seq_mask[i_batch] = seq_mask[i_batch][:batch_seq_len]
-                for k, v in LM_embed_dic.items():
-                    LM_embed_dic[k][i_batch] = v[i_batch][:batch_sqe_len,:]
+                if LM_embed_list:
+                    LM_embed_list[i_batch] = LM_embed_list[i_batch][:batch_sqe_len,:]
             elif L < batch_seq_len:
                 pad_len = (batch_seq_len - L)
                 input_ids_b[i_batch] += [self.base2idx['PAD']] * pad_len
@@ -89,11 +98,9 @@ class NCfoldCollator(BaseCollator):
                 mat_b[i_batch] = np.pad(mat_b[i_batch], ((0, 0), (0, pad_len), (0, pad_len)), constant_values=0)
                 mat_mask[i_batch] = np.pad(mat_mask[i_batch], ((0, pad_len), (0, pad_len)), constant_values=0)
                 seq_mask[i_batch] = np.pad(seq_mask[i_batch], ((0, pad_len)), constant_values=0)
-                for k, v in LM_embed_dic.items():
-                    LM_embed_dic[k][i_batch] = F.pad(v[i_batch], pad=(0, 0, 0, pad_len), mode='constant', value=0)
+                if LM_embed_list:
+                    LM_embed_list[i_batch] = F.pad(LM_embed_list[i_batch], pad=(0, 0, 0, pad_len), mode='constant', value=0)
 
-        for k, v in LM_embed_dic.items():
-            LM_embed_dic[k] = torch.stack(v, dim=0)  # [LxD] -> BxLxD
         data_dic = {
             'mat_mask': torch.from_numpy(self.stack_fn(mat_mask)).bool(),
             'seq_mask': torch.from_numpy(self.stack_fn(seq_mask)).bool(),
@@ -103,6 +110,7 @@ class NCfoldCollator(BaseCollator):
             "label_orient": torch.from_numpy(self.stack_fn(label_orient)).long(),
             'name': name_b,
             'seq': seq_b,
-            'LM_embed_dic': LM_embed_dic,
             }
+        if LM_embed_list:
+            data_dic['LM_embed'] = torch.FloatTensor(self.stack_fn(LM_embed_list))
         return data_dic

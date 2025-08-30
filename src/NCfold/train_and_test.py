@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 
 from .dataset.RNAdata import RNAdata
 from .dataset.collator import NCfoldCollator
+from .dataset.LM_embeddings import LM_dim_dic
 from .model.AttnMatFusion_net import AttnMatFusion_net
 from .model.SeqMatFusion_net import SeqMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
@@ -127,9 +128,8 @@ class NCfoldTrainer(BaseTrainer):
                 mat = data["mat"].to(self.args.device)
                 label_edge = data["label_edge"].to(self.args.device)
                 label_orient = data["label_orient"].to(self.args.device)
-                LM_embed_dic = {k: v.to(self.args.device) for k, v in data['LM_embed_dic'].items()}
-        
-                pred_edge, pred_orient = self.model(input_ids, mat, LM_embed_dic=LM_embed_dic)
+                LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
+                pred_edge, pred_orient = self.model(input_ids, mat, LM_embed=LM_embed)
                 loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
                 loss = loss_dic['loss']
                 # clear grads
@@ -162,9 +162,9 @@ class NCfoldTrainer(BaseTrainer):
             for i, data in enumerate(self.eval_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
                 mat = data["mat"].to(self.args.device)
-                LM_embed_dic = {k: v.to(self.args.device) for k, v in data['LM_embed_dic'].items()}
+                LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
                 with torch.no_grad():
-                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed_dic=LM_embed_dic)
+                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed=LM_embed)
                 num_total += self.args.batch_size
                 pred_edges += [b for b in pred_edge] # batch
                 pred_orients += [b for b in pred_orient]
@@ -236,9 +236,9 @@ class NCfoldTrainer(BaseTrainer):
             for i, data in enumerate(self.test_dataloader):
                 input_ids = data["input_ids"].to(self.args.device)
                 mat = data["mat"].to(self.args.device)
-                LM_embed_dic = {k: v.to(self.args.device) for k, v in data['LM_embed_dic'].items()}
+                LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
                 with torch.no_grad():
-                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed_dic=LM_embed_dic)
+                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed=LM_embed)
                 num_total += self.args.batch_size
                 pred_edges += [b for b in pred_edge] # batch
                 pred_orients += [b for b in pred_orient]
@@ -348,6 +348,11 @@ def get_args():
     parser.add_argument('--use_RFdiff_data', action='store_true')
     parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=LMs)
     parser.add_argument('--LM_checkpoint_dir', type=str, default='LM_checkpoint', help='LM checkpoint_dir, each LM is placed in a subdir of same name.')
+
+    ## Fuse LM embeddings
+    parser.add_argument('--pca_dims', nargs='*', default=[32, 64, 128], )
+    parser.add_argument('--top_k', type=int, default=1)
+
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
     parser.add_argument('--hidden_dim', type=int, default=256)
@@ -390,7 +395,9 @@ def train_and_test():
                                   dim=args.hidden_dim, 
                                   depth=args.num_blocks, 
                                   positional_embedding='rope', 
-                                  use_BPM=True
+                                  use_BPM=True,
+                                  LM_embed_dim= sum(args.pca_dims)*args.top_k if args.LM_list else None,
+
                                  )
     elif args.model_name == "SeqMatFusion_net":
         model = SeqMatFusion_net(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
@@ -413,7 +420,7 @@ def train_and_test():
 
     print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:val:test={len(dataset_train)}:{len(dataset_eval)}:{len(dataset_test)}') 
     ## max_seq_len == None, for setting batch_max_len
-    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir)
+    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, pca_dims=args.pca_dims, top_k=args.top_k)
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
     trainer = NCfoldTrainer(
         args=args,

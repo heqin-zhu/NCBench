@@ -32,6 +32,31 @@ multimolecule_LM_classes = {
         
         }
 
+LM_dim_dic = {
+         'structRFM': 768,
+         'aido.rna-650m': 1280, 
+         'aido.rna-1.6b': 2048, 
+         'ernierna': 768, 
+         'ernierna-ss': 768, 
+         'rinalmo-giga': 1280, 
+         'rinalmo-mega': 640, 
+         'rinalmo-micro': 480, 
+         'rnabert': 120, 
+         'rnaernie': 768, 
+         'rnafm': 640, 
+         'mrnafm': 1280, 
+         'rnamsm': 768, 
+         'splicebert': 512, 
+         'splicebert.510': 512, 
+         'splicebert-human.510': 512, 
+         'utrbert-3mer': 768, 
+         'utrbert-4mer': 768, 
+         'utrbert-5mer': 768, 
+         'utrbert-6mer': 768, 
+         'utrlm-te_el': 128, 
+         'utrlm-mrl': 128,
+        }
+
 def get_LM_models(LM_checkpoint_dir, LM_list):
     dic = {}
     for LM_name in LM_list:
