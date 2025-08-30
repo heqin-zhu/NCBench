@@ -3,7 +3,44 @@ from IsoScore import IsoScore
 from sklearn.decomposition import PCA
 
 
-def fuse_embeddings(embeddings, pca_dims=[32, 64, 128], top_k=3):
+def fuse_topk_embeddings(embeddings, top_k=3):
+    """
+    Compute IsoScore and cosine similarity of original embeddings
+    then select top-k embeddings
+
+    Args:
+        embeddings: list of embeddings
+            [LxD1, LxD2]
+        top_k: number of best embeddings to select
+
+    Returns:
+        fused_embedding: top_K x Lx L
+        selected_idxs: [int]
+            idx of selected embeddings
+        avg_scores: numpy array of average scores for all models
+    """
+    N = len(embeddings)
+    scores = []
+    for i in range(N):
+        X = embeddings[i].detach().cpu().numpy()  # shape [L, D_i]
+        embeddings[i] = X
+        # IsoScore
+        iso_score = IsoScore.IsoScore(X)
+
+        # Cosine similarity (mean pairwise cosine)
+        X_norm = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
+        cos_sim = (X_norm @ X_norm.T).mean()
+
+        # Combine score (you can change the weight)
+        combined = 0.5 * iso_score + 0.5 * cos_sim
+        scores.append(combined)
+    avg_scores = scores
+    top_idx = np.argsort(avg_scores)[-top_k:]
+    fused_embedding = np.stack([embeddings[i] @ embeddings[i].T  for i in top_idx], axis=0) # top_k x L x L
+    return fused_embedding, top_idx, avg_scores
+
+
+def fuse_PCA_topk_embeddings(embeddings, pca_dims=[32, 64, 128], top_k=3):
     """
     Compute IsoScore and cosine similarity after PCA reduction,
     then select top-k embeddings
@@ -33,7 +70,7 @@ def fuse_embeddings(embeddings, pca_dims=[32, 64, 128], top_k=3):
             pca_embeddings[dim].append(X_red)
 
             # IsoScore
-            iso_score = IsoScore(X_red).compute()
+            iso_score = IsoScore.IsoScore(X_red)
 
             # Cosine similarity (mean pairwise cosine)
             X_norm = X_red / (np.linalg.norm(X_red, axis=1, keepdims=True) + 1e-9)

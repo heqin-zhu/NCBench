@@ -12,9 +12,10 @@ class RNAdata(Dataset):
         '''
         super(RNAdata, self).__init__()
         self.data_dir = data_dir
+        filter_path = None if filter_fasta is None else os.path.join(data_dir, filter_fasta)
         if phase=='train':
             file_name = "NCpair_train_data.json"
-            self.data = load_dataset_RNAVIEW(os.path.join(data_dir, file_name), max_seq_len, os.path.join(data_dir, filter_fasta), include_canonical=include_canonical)
+            self.data = load_dataset_RNAVIEW(os.path.join(data_dir, file_name), max_seq_len, filter_path, include_canonical=include_canonical)
             if use_RFdiff_data:
                 RFdiff_path = 'RFdiff_data.json'
                 RFdiff_data = load_dataset_RNAVIEW(os.path.join(data_dir, RFdiff_path), max_seq_len, include_canonical=include_canonical)
@@ -25,7 +26,7 @@ class RNAdata(Dataset):
                 file_name = "NCpair_validation_data.json"
             else:
                 file_name = "NCpair_test_data.json"
-            self.data = load_dataset_RNAVIEW(os.path.join(data_dir, file_name), max_seq_len, os.path.join(data_dir, filter_fasta), include_canonical=include_canonical)
+            self.data = load_dataset_RNAVIEW(os.path.join(data_dir, file_name), max_seq_len, filter_path, include_canonical=include_canonical)
 
     def __getitem__(self, idx):
         return self.data[idx]

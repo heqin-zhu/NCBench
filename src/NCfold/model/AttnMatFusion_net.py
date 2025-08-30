@@ -296,28 +296,22 @@ class AttnMatFusion_net(nn.Module):
                  head_size=32,
                  use_SE=True,
                  use_BPM=True,
-                 LM_embed_dim=None,
+                 LM_embed_chan=None,
                  *args,
                  **kargs,
                  ):
         super().__init__()
-        conv_in_chan = 0
+        self.conv_in_chan = 0
         if use_BPM:
-            conv_in_chan = 2
+            self.conv_in_chan = 2
+        if LM_embed_chan:
+            self.conv_in_chan += LM_embed_chan
+        ## LM embed # channel
+        self.LM_embed_chan = LM_embed_chan
         self.use_BPM = use_BPM
+
         ## token embed
         self.seq_input_embed = nn.Embedding(6, dim)
-
-        ## LM embed
-        self.LM_embed_dim = LM_embed_dim
-        if LM_embed_dim:
-            self.LM_linear = nn.Linear(LM_embed_dim, dim)
-            self.fuse_LM_seq_linear = nn.Linear(2*dim, dim)
-
-        ## positional embedding
-        if positional_embedding=='rope':
-            self.seq_rope = RoPE(dim=dim, max_seq_len=max_seq_len)
-            self.mat_2d_rope = Matrix2DRoPE(dim=dim, max_seq_len=max_seq_len)
 
         self.positional_embedding=positional_embedding,
         self.transformer = FuseFormer(
@@ -326,7 +320,7 @@ class AttnMatFusion_net(nn.Module):
             head_size=head_size,
             positional_embedding=positional_embedding,
             use_SE=use_SE,
-            conv_in_chan=conv_in_chan,
+            conv_in_chan=self.conv_in_chan,
         )
 
         self.final_seq_proj = MLP(dim, out_dim, dim//2)
@@ -335,17 +329,23 @@ class AttnMatFusion_net(nn.Module):
         self.final_mat_proj = ResConv2dSimple(num_heads, out_c=out_channels, kernel_size=3, use_SE=use_SE)
 
             
-    def forward(self, seq, mat=None, seq_mask=None, mat_mask=None, LM_embed=None):
+    def forward(self, seq, BPM=None, LM_embed=None, seq_mask=None, mat_mask=None):
         # token embed
         seq = self.seq_input_embed(seq)
-        ## fuse LM
-        if self.LM_embed_dim:
-            seq = self.fuse_LM_seq_linear(torch.cat([seq, self.LM_linear(LM_embed)], dim=-1))
 
+        mat = []
+
+        ## fuse LM
+        if self.use_BPM:
+            mat.append(BPM)
+        if self.LM_embed_chan:
+            mat.append(LM_embed)
+        if mat:
+            mat = torch.cat(mat, dim=1)
         # positional embedding
         if self.positional_embedding == 'rope':
             seq = self.seq_rope(seq)
-            if self.use_BPM:
+            if self.conv_in_chan>0:
                 mat = self.mat_2d_rope(mat)
         seq_feat, mat_feat = self.transformer(seq, mat, seq_mask, mat_mask)
 

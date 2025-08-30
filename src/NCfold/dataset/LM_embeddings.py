@@ -57,6 +57,11 @@ LM_dim_dic = {
          'utrlm-mrl': 128,
         }
 
+MAX_SEQ_LEN_DIC = {
+               'rnabert': 438,
+              }
+
+
 def get_LM_models(LM_checkpoint_dir, LM_list):
     dic = {}
     for LM_name in LM_list:
@@ -90,8 +95,12 @@ def get_LM_embedding(model, LM_name, name, seq, cache_dir='LM_embeddings', rerun
         #     feat = results["representations"][12][0][1:-1]
         elif LM_name.lower() in multimolecule_LMs:
             model, tokenizer = model
-            input = tokenizer(seq, return_tensors='pt')
-            output = model(**input, output_hidden_states=True)
+            if LM_name.lower() in MAX_SEQ_LEN_DIC:
+                max_len = MAX_SEQ_LEN_DIC[LM_name.lower()]
+                if len(seq)>max_len:
+                    seq = seq[:max_len]
+            inputs = tokenizer(seq, return_tensors='pt')
+            output = model(**inputs, output_hidden_states=True)
             feat = output.hidden_states[-1][0, 1:-1,:]
         else:
             raise Exception(f'Unknown LM name: {LM_name}')

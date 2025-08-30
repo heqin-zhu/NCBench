@@ -314,7 +314,7 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include
     print(f'Lengths: min={np.min(lengths)}, max={np.max(lengths)}')
     if max_seq_len is not None:
         data_list = [d for d in data_list if len(d['seq'])<=max_seq_len]
-        print(f'  L<={max_seq_len} = {len([l for l in lengths if l<=max_seq_len])}')
+        print(f'  L less than {max_seq_len}: {len([l for l in lengths if l<=max_seq_len])}')
     return data_list
 
 
