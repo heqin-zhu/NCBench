@@ -21,8 +21,9 @@ from .util.NCfold_kit import str2bool, str2list, count_para, get_config
 from .util.data_processing import edge_orient_to_basepair_batch
 
 
-MODELS = ['SeqMatFusion_net', 'AttnMatFusion_net']
+MODELS = ['AttnMatFusion_net']
 DATASETS = ["PDB_NC"]
+LMs = ['structRFM', 'aido.rna-650m', 'aido.rna-1.6b', 'ernierna', 'ernierna-ss', 'rinalmo-giga', 'rinalmo-mega', 'rinalmo-micro', 'rnabert', 'rnaernie', 'rnafm', 'mrnafm', 'rnamsm', 'splicebert', 'splicebert.510', 'splicebert-human.510', 'utrbert-3mer', 'utrbert-4mer', 'utrbert-5mer', 'utrbert-6mer', 'utrlm-te_el', 'utrlm-mrl']
 
 
 class BaseTrainer(object):
@@ -345,7 +346,7 @@ def get_args():
     parser.add_argument('--output_dir', type=str, default='.runs/tmp')
     parser.add_argument('--include_canonical', action='store_true')
     parser.add_argument('--use_RFdiff_data', action='store_true')
-    parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=['structRFM', 'RNAFM', 'RNABERT', 'RNAMSM'])
+    parser.add_argument('--LM_list', nargs='*', default=['structRFM'], choices=LMs)
     parser.add_argument('--LM_checkpoint_dir', type=str, default='LM_checkpoint', help='LM checkpoint_dir, each LM is placed in a subdir of same name.')
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
