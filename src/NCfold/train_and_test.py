@@ -167,8 +167,8 @@ class NCfoldTrainer(BaseTrainer):
                 with open(os.path.join(raw_out_dir, f'{name}_{flag}.ss'), 'w') as fp:
                     fp.write(f'name:{names[i]}\n')
                     fp.write(f'seq:{seqs[i]}\n')
-                    fp.write(f'num interactions:{len(data)}\n')
-                    for tup in data:
+                    fp.write(f'num interactions:{len(data[i])}\n')
+                    for tup in data[i]:
                         fp.write(','.join([str(i) for i in tup])+'\n')
     def eval(self, epoch):
         self.model.eval()
