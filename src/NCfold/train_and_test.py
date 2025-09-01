@@ -349,15 +349,17 @@ class NCfoldTrainer(BaseTrainer):
         with open(test_metric_path, 'w') as fp:
             json.dump(all_test_metric, fp, indent=2)
 
-    def fit(self):
-        for epoch in range(self.args.num_train_epochs):
-            self.train(epoch)
-            self.eval(epoch)
+    def run(self, phase='train'):
+        if phase == 'train':
+            for epoch in range(self.args.num_train_epochs):
+                self.train(epoch)
+                self.eval(epoch)
         self.test()
 
 
 def get_args():
     parser = argparse.ArgumentParser('Implementation of RNA sequence classification.')
+    parser.add_argument('--phase', type=str, default="train", choices=['train', 'test'])
     # data
     parser.add_argument('--dataset_dir', type=str, default="data")
     parser.add_argument('--dataset', type=str, default="PDB_NC", choices=DATASETS)
@@ -459,7 +461,7 @@ def train_and_test():
     #         trainer.train(i_epoch)
     #         trainer.eval(i_epoch)
 
-    trainer.fit()
+    trainer.run(args.phase)
 
     print(f'End time: {datetime.now()}')
 
