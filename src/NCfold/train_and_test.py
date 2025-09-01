@@ -54,7 +54,7 @@ class BaseTrainer(object):
         self.loss_fn = loss_fn
         self.optimizer = optimizer
         self.compute_metrics = compute_metrics
-        self.prime_metric = 'edge_orient_score' # TODO, modify compute_metrics
+        self.prime_metric = 'nc_score'
         self.visual_writer = visual_writer
         self.max_metric = 0.
         # init dataloaders
@@ -152,6 +152,19 @@ class NCfoldTrainer(BaseTrainer):
         print(f'[train] epoch={epoch:>3d}, train_loss={mean_loss:.4f}, time={time_ed:.4f}s')
 
 
+    def save_pred_gt_results(self, raw_out_dir, names, seqs, pred_edge, pred_orient, gt_edge_np, gt_orient_np):
+        pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
+        for i in range(len(pred_edge_np)):
+            name = names[i]
+            np.savez(os.path.join(raw_out_dir, f'{name}_pred.npz'), edge=pred_edge_np[i], orient=pred_orient_np[i], )
+            np.savez(os.path.join(raw_out_dir, f'{name}_gt.npz'), edge=gt_edge_np[i], orient=gt_orient_np[i], )
+            with open(os.path.join(raw_out_dir, f'{name}_pred.ss'), 'w') as fp:
+                fp.write('seq:' + seqs[i]+'\n')
+                gt_edge_str = ','.join([str(x) for x in gt_edge_np[i].tolist()])
+                fp.write('gt_edge:'+gt_edge_str+'\n')
+                edge_str = ','.join([str(x) for x in pred_edge_np[i].tolist()])
+                fp.write('pred_edge:'+edge_str+'\n')
+
     def eval(self, epoch):
         self.model.eval()
         time_st = time.time()
@@ -175,13 +188,9 @@ class NCfoldTrainer(BaseTrainer):
                 pred_orients += [b for b in pred_orient]
                 gt_edges += [b for b in data["label_edge"]]
                 gt_orients += [b for b in data["label_orient"]]
-                # TODO postprocess  args.include_canonical
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                for i in range(len(pred_edge_np)):
-                    name = data["name"][i]
-                    np.savez(os.path.join(raw_out_dir, f'{name}_pred.npz'), edge=pred_edge_np[i], orient=pred_orient_np[i])
-                    np.savez(os.path.join(raw_out_dir, f'{name}_gt.npz'), edge=gt_edge_np[i], orient=gt_orient_np[i])
+                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np)
 
                 out_preds.append(edge_orient_to_basepair_batch(pred_edge_np, pred_orient_np))
                 out_gts.append(edge_orient_to_basepair_batch(gt_edge_np, gt_orient_np))
@@ -251,13 +260,9 @@ class NCfoldTrainer(BaseTrainer):
                 pred_orients += [b for b in pred_orient]
                 gt_edges += [b for b in data["label_edge"]]
                 gt_orients += [b for b in data["label_orient"]]
-                # TODO postprocess  args.include_canonical
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                for i in range(len(pred_edge_np)):
-                    name = data["name"][i]
-                    np.savez(os.path.join(raw_out_dir, f'{name}_pred.npz'), edge=pred_edge_np[i], orient=pred_orient_np[i])
-                    np.savez(os.path.join(raw_out_dir, f'{name}_gt.npz'), edge=gt_edge_np[i], orient=gt_orient_np[i])
+                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np)
 
                 out_preds.append(edge_orient_to_basepair_batch(pred_edge_np, pred_orient_np))
                 out_gts.append(edge_orient_to_basepair_batch(gt_edge_np, gt_orient_np))

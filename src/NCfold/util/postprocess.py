@@ -1,12 +1,17 @@
+from itertools import product
+
+import numpy as np
 import torch
 import torch.nn.functional as F
+
+from BPfold.util.RNA_kit import mut_seq
 
 
 def get_base_index():
     return {'A': 0, 'U': 1, 'C': 2, 'G': 3, 'N': 4}
 
 
-def constraint_matrix_batch(x, loop_min_len=2, is_nc=False):
+def constraint_matrix_batch(x, loop_min_len=1, is_nc=True):
     base_index = get_base_index()
     base_a = x[:, :, base_index['A']]
     base_u = x[:, :, base_index['U']]
@@ -14,15 +19,6 @@ def constraint_matrix_batch(x, loop_min_len=2, is_nc=False):
     base_g = x[:, :, base_index['G']]
     batch = base_a.shape[0]
     length = base_a.shape[1]
-
-    # canonical pairs
-    au = torch.matmul(base_a.view(batch, length, 1), base_u.view(batch, 1, length))
-    au_ua = au + torch.transpose(au, -1, -2)
-    cg = torch.matmul(base_c.view(batch, length, 1), base_g.view(batch, 1, length))
-    cg_gc = cg + torch.transpose(cg, -1, -2)
-    ug = torch.matmul(base_u.view(batch, length, 1), base_g.view(batch, 1, length))
-    ug_gu = ug + torch.transpose(ug, -1, -2)
-    ret = au_ua + cg_gc + ug_gu # batch x L x L
 
     ## non-canonical pairs
     if is_nc:
@@ -36,7 +32,16 @@ def constraint_matrix_batch(x, loop_min_len=2, is_nc=False):
         uu = torch.matmul(base_u.view(batch, length, 1), base_u.view(batch, 1, length))
         cc = torch.matmul(base_c.view(batch, length, 1), base_c.view(batch, 1, length))
         gg = torch.matmul(base_g.view(batch, length, 1), base_g.view(batch, 1, length))
-        ret += ac_ca + ag_ga + uc_cu + aa + uu + cc + gg
+        ret = ac_ca + ag_ga + uc_cu + aa + uu + cc + gg
+    else:
+        # canonical pairs
+        au = torch.matmul(base_a.view(batch, length, 1), base_u.view(batch, 1, length))
+        au_ua = au + torch.transpose(au, -1, -2)
+        cg = torch.matmul(base_c.view(batch, length, 1), base_g.view(batch, 1, length))
+        cg_gc = cg + torch.transpose(cg, -1, -2)
+        ug = torch.matmul(base_u.view(batch, length, 1), base_g.view(batch, 1, length))
+        ug_gu = ug + torch.transpose(ug, -1, -2)
+        ret = au_ua + cg_gc + ug_gu # batch x L x L
 
     # remove sharp loop 
     for b in range(batch):
@@ -101,8 +106,12 @@ def apply_constraints(u, x, lr_min, lr_max, num_itr, rho=0.0, with_l1=False, s=2
     return out_a
 
 
-def postprocess(pred_batch, seqs, return_nc=False, return_score=False):
-    ''' nc: non-canonical '''
+def postprocess_singlechannel(pred_batch, seqs, return_nc=True, return_score=False):
+    ''' 
+        deprecated, not suitable for NCfold, maybe for BPfold
+        nc: non-canonical 
+        pred_batch: B x C x L x L
+    '''
     def get_mat_score(pred_ori, pred_post):
         ret = []
         for row_ori, row_post in zip(pred_ori, pred_post):
@@ -116,30 +125,48 @@ def postprocess(pred_batch, seqs, return_nc=False, return_score=False):
     ret_pred_nc = []
     ret_score = []
     ret_score_nc = []
+
+    CANONICAL_PAIRS = {'AU', 'UA', 'GC', 'CG', 'GU', 'UG'}
     base_index = get_base_index()
+    index_base = {v: k for k, v in base_index.items()}
+    num_base = 4
 
+    device = pred_batch.device
+    for i_batch in range(pred_batch.shape[0]):
+        seq = mut_seq(seqs[i_batch])
+        L = len(seq)
+        # seq_onehot
+        seq_onehot = torch.zeros(L, num_base, dtype=torch.float)
+        for idx, base in enumerate(seq):
+            seq_onehot[idx][base_index[base]] = 1
 
-    # TODO
-    '''
-        nc_map = seqmat[self.noncanonical_flag].sum(axis=0).astype(bool) # LxL
-        nc_map_pad = np.pad(nc_map, ((1, rside_pad), (1, rside_pad)), constant_values=0)
-        ret['nc_map'] = torch.FloatTensor(nc_map_pad)
-    '''
-    for i in range(pred_batch.shape[0]):
-        seq = seqs[i]
-        seq_onehot = np.zeros((1, L, self.num_base), dtype=float)
-        for idx, base in range(seq):
-            seq_onehot[0][idx][base_index[base]] = 1
+        # seq_embed
+        seq_embed = np.zeros((num_base**2, L, L)) # AUGC
+        for n, (i, j) in enumerate(product(range(num_base), range(num_base))):
+            seq_embed[n] = np.matmul(seq_onehot[:, i].reshape(-1, 1), seq_onehot[:, j].reshape(1, -1))
+        # nc_map
+        noncanonical = [index_base[i]+index_base[j] not in CANONICAL_PAIRS for i, j in product(range(num_base), range(num_base))]
+        noncanonical_flag = np.array(noncanonical, dtype=bool)
+        nc_map = seq_embed[noncanonical_flag].sum(axis=0).astype(bool) # LxL
 
-        pred = apply_constraints(pred_batch[i:i+1], seq_onehot, 0.01, 0.1, 100, 1.6, True, 1.5)
+        ## tensor, device
+        nc_map = torch.from_numpy(nc_map).to(device)
+        seq_onehot = seq_onehot.to(device)
+
+        pred_mat = pred_batch[i_batch:i_batch+1]
+        if pred_mat.shape[-1]>L:
+            pred_mat = pred_mat[:, :, :L, :L]
+        # 1 x L x L
+        pred = apply_constraints(pred_mat.argmax(dim=1), seq_onehot.unsqueeze(0), 0.01, 0.1, 100, 1.6, True, 1.5)
+        # L x L
         ret_pred.append(pred[0])
 
         if return_score:
-            ret_score.append(get_mat_score(pred_batch[i], pred[0]))
+            ret_score.append(get_mat_score(pred_batch[i_batch], pred[0]))
         if return_nc:
-            pred_nc = apply_constraints(pred_batch[i:i+1], seq_onehot, 0.01, 0.1, 100, 1.6, True, 1.5, is_nc=True)
+            pred_nc = apply_constraints(pred_mat.argmax(dim=1), seq_onehot.unsqueeze(0), 0.01, 0.1, 100, 1.6, True, 1.5, is_nc=True)
             pred_nc =  nc_map * pred_nc
             ret_pred_nc.append(pred_nc[0])
             if return_score:
-                ret_score_nc.append(get_mat_score(pred_batch[i], pred_nc[0]))
+                ret_score_nc.append(get_mat_score(pred_batch[i_batch], pred_nc[0]))
     return ret_pred, ret_pred_nc, ret_score, ret_score_nc

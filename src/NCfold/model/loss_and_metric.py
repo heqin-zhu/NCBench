@@ -77,7 +77,7 @@ def compute_metrics(edge_pred, orient_pred, edge_true, orient_true, average='mac
             else:
                 ret[f'{flag}_cls_{cls}'] = (pred[mask] == cls).mean()
     # TODO
-    ret['edge_orient_score'] = (ret['edge_f1'] + ret['orient_f1'])/2
+    ret['nc_score'] = (ret['edge_f1'] + ret['orient_f1'])/2
     return ret
 
 

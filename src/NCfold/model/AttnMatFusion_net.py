@@ -28,7 +28,7 @@ class ResConv2dSimple(nn.Module):
     def __init__(self, 
                  in_c, 
                  out_c,
-                 kernel_size=7,
+                 kernel_size=3,
                  use_SE = False,
                 ):  
         super().__init__()
