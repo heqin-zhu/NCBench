@@ -7,8 +7,7 @@ import torch.nn.functional as F
 from BPfold.util.base_pair_motif import BPM_energy
 
 from ..util.NCfold_kit import Stack
-from .fuse_embeddings import fuse_topk_embeddings
-from .LM_embeddings import get_LM_models, get_LM_embedding
+from .LM_embeddings import get_LM_models, get_LM_embedding, get_LM_embedding_score
 
 
 class BaseCollator(object):
@@ -20,8 +19,9 @@ class BaseCollator(object):
 
 
 class NCfoldCollator(BaseCollator):
-    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint', top_k=1, *args, **kargs):
+    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint', top_k=1, rerun=False, *args, **kargs):
         super(NCfoldCollator, self).__init__()
+        self.rerun = rerun
         self.max_seq_len = max_seq_len
         # only replace T or U
         assert replace_T ^ replace_U, "Only replace T or U."
@@ -57,12 +57,16 @@ class NCfoldCollator(BaseCollator):
 
             ## LM embed
             if self.LM_list:
-                cur_LM_embed_list = []
+                scores = []
                 for LM_name in self.LM_list:
-                    cur_LM_embed_list.append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir))
+                    scores.append(get_LM_embedding_score(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir, rerun=self.rerun))
 
-                ## Fuse LM embed
-                fused_embedding, top_idx, scores = fuse_topk_embeddings(cur_LM_embed_list, self.top_k)
+                top_idx = np.argsort(scores)[-self.top_k:]
+                fused_embeddings = []
+                for i in top_idx:
+                    LM_name = self.LM_list[i]
+                    fused_embeddings.append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir, rerun=self.rerun))
+                fused_embedding = np.stack([(em @ em.T).detach().cpu().numpy()  for em in fused_embeddings], axis=0) # top_k x L x L
                 LM_embed_list.append(fused_embedding)
 
             mat_b.append(self.BPM.get_energy(seq))

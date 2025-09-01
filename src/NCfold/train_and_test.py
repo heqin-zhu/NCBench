@@ -24,7 +24,7 @@ from .util.data_processing import extract_basepair_interaction, extract_basepair
 
 MODELS = ['AttnMatFusion_net']
 DATASETS = ["PDB_NC"]
-LMs = ['structRFM', 'aido.rna-650m', 'aido.rna-1.6b', 'ernierna', 'ernierna-ss', 'rinalmo-giga', 'rinalmo-mega', 'rinalmo-micro', 'rnabert', 'rnaernie', 'rnafm', 'mrnafm', 'rnamsm', 'splicebert', 'splicebert.510', 'splicebert-human.510', 'utrbert-3mer', 'utrbert-4mer', 'utrbert-5mer', 'utrbert-6mer', 'utrlm-te_el', 'utrlm-mrl']
+LMs = ['structRFM', 'rnabert', 'rnaernie', 'rnafm', 'splicebert', 'splicebert.510', 'splicebert-human.510', 'utrlm-te_el', 'utrlm-mrl', 'aido.rna-650m', 'rinalmo-micro', 'rinalmo-mega', 'aido.rna-1.6b', 'rinalmo-giga']
 
 
 class BaseTrainer(object):
@@ -372,6 +372,7 @@ def get_args():
 
     ## Fuse LM embeddings
     parser.add_argument('--top_k', type=int, default=2)
+    parser.add_argument('--rerun', action='store_true')
 
     # model args
     parser.add_argument('--model_name', type=str, default="AttnMatFusion_net", choices=MODELS)
@@ -442,7 +443,8 @@ def train_and_test():
 
     print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:val:test={len(dataset_train)}:{len(dataset_eval)}:{len(dataset_test)}') 
     ## max_seq_len == None, for setting batch_max_len
-    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, top_k=args.top_k)
+    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, top_k=args.top_k, rerun=args.rerun)
+    print(f'LM embeddings [top {args.top_k} of {len(args.LM_list)}]: {args.LM_list}')
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
     trainer = NCfoldTrainer(
         args=args,
