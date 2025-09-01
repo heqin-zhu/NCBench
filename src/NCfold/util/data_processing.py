@@ -35,35 +35,6 @@ edge_index_dic = {
                   3: 'S',
                 }
 
-def edge_orient_to_basepair(edge, orient):
-    ret = []
-    L = len(edge)
-    for i in range(L):
-        for j in range(i+2, L):
-            if orient[i][j]>0:
-                ret.append((i, j, edge_index_dic[edge[i]], edge_index_dic[edge[j]], orient_index_dic[orient[i][j]]))
-    return ret
-
-
-def edge_orient_to_basepair_batch(edge, orient):
-    def get_pred_edge(edge_arr):
-        # Lx4
-        return np.argmax(edge_arr[:, 1:], axis=-1)+1 # ignore class 0, TODO
-
-    shape = np.array(edge).shape
-    if len(shape)==1:
-        return edge_orient_to_basepair(edge, orient)
-    elif len(shape)==2:
-        if shape[-1] == 4:
-            return edge_orient_to_basepair(get_pred_edge(edge), np.argmax(orient, axis=0))
-        else:
-            return [edge_orient_to_basepair(edge[i], orient[i]) for i in range(shape[0])]
-    elif len(edge.shape)==3:
-        return [edge_orient_to_basepair(get_pred_edge(edge[i]), np.argmax(orient[i], axis=0)) for i in range(shape[0])]
-    else:
-        raise Exception(f'[Error] edge shape:{edge.shape}')
-
-
 def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
     tmp_dir = 'tmp'
     os.makedirs(tmp_dir, exist_ok=True)
@@ -316,6 +287,89 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include
         data_list = [d for d in data_list if len(d['seq'])<=max_seq_len]
         print(f'  L less than {max_seq_len}: {len([l for l in lengths if l<=max_seq_len])}')
     return data_list
+
+
+def extract_basepair_interaction(pred_edge_np, pred_orient_np):
+    '''
+        pred_edge_np: numpy.ndarray, (B)xLx4
+        pred_orient_np: numpy.ndarray, (B)x3xLxL
+    '''
+    shape = pred_edge_np.shape
+    if len(shape)>3 or len(shape)<2 or shape[-1]!=4:
+        raise Exception('Error format of pred_edge: {shape}, should be in shape of Lx4 or BxLx4')
+    elif len(shape)==2:
+        out_edges, out_pairs, out_preds = [], [], []
+        for i in range(len(pred_edge_np)):
+            out_edge, out_pair, out_pred = extract_basepair_interaction(pred_edge_np[i], pred_orient_np[i])
+            out_edges.append(out_edge)
+            out_pairs.append(out_pair)
+            out_preds.append(out_pred)
+        return out_edges, out_pairs, out_preds
+    
+    pred_orient_np = (pred_orient_np+ np.transpose(pred_orient_np, (0, -1, -2)))/2
+    C, L, L2 = pred_orient_np.shape
+    L3, D = pred_orient_np.shape
+    assert C==3 and D==4 and L==L2==L3
+    pairs = []
+    
+    candidates = []
+    orient_softmax = pred_orient_np.argmax(axis=0)
+    for i in range(L):
+        for j in range(i + 1, L):
+            cls = orient_softmax[i, j]
+            if cls!=0:
+                candidates.append((i, j, cls, pred_orient_np[cls, i, j]))
+    
+    candidates.sort(key=lambda x: x[-1], reverse=True)
+    
+    used = set()
+    ## greedy search
+    for i, j, cls, score in candidates:
+        if i not in used and j not in used:
+            pairs.append((i, j, cls))
+            used.add(i)
+            used.add(j)
+
+    edges = [0]*L
+    final_data = []
+    ## process edge
+    for i, j, cls in pairs:
+        edges[i] = pred_edge_np[i, 1:].argmax() + 1
+        edges[j] = pred_edge_np[j, 1:].argmax() + 1
+        final_data.append((i, j, edge_index_dic[edges[i]], edge_index_dic[edge[j]], orient_index_dic[cls]))
+ ))
+    return edges, pairs, final_data
+
+
+def extract_basepair_interaction_gt(gt_edge_np, gt_orient_np):
+    '''
+        gt_edge_np: (B)xL
+        gt_orient_np: (B)xLxL
+    '''
+    shape = pred_edge_np.shape
+    if len(shape)>2:
+        raise Exception('Error format of gt_edge: {shape}, should be in shape of L or BxL')
+    elif len(shape)==2:
+        out_edges, out_pairs, out_gts = [], [], []
+        for i in range(len(gt_edge_np)):
+            out_edge, out_pair, out_gt = extract_basepair_interaction_gt(gt_edge_np[i], gt_orient_np[i])
+            out_edges.append(out_edge)
+            out_pairs.append(out_pair)
+            out_gts.append(out_gt)
+        return out_edges, out_pairs, out_gts
+    edges = [i for i in gt_edge_np]
+    L = len(gt_edge_np)
+    pairs = []
+    final_data = []
+    for i in range(L):
+        for j in range(i+1, L):
+            cls = gt_orient_np[i, j]
+            if cls!=0:
+                pairs.append((i, j, cls))
+
+                final_data.append((i, j, edge_index_dic[edges[i]], edge_index_dic[edge[j]], orient_index_dic[cls]))
+ ))
+    return edges, pairs, final_data
 
 
 if __name__ == '__main__':

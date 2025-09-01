@@ -19,7 +19,7 @@ from .model.AttnMatFusion_net import AttnMatFusion_net
 from .model.SeqMatFusion_net import SeqMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
 from .util.NCfold_kit import str2bool, str2list, count_para, get_config
-from .util.data_processing import edge_orient_to_basepair_batch
+from .util.data_processing import extract_basepair_interaction, extract_basepair_interaction_gt
 
 
 MODELS = ['AttnMatFusion_net']
@@ -151,20 +151,18 @@ class NCfoldTrainer(BaseTrainer):
         time_ed = time.time() - time_st
         print(f'[train] epoch={epoch:>3d}, train_loss={mean_loss:.4f}, time={time_ed:.4f}s')
 
-
-    def save_pred_gt_results(self, raw_out_dir, names, seqs, pred_edge, pred_orient, gt_edge_np, gt_orient_np):
-        pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
+    def save_pred_gt_results(self, raw_out_dir, names, seqs, pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt):
         for i in range(len(pred_edge_np)):
             name = names[i]
             np.savez(os.path.join(raw_out_dir, f'{name}_pred.npz'), edge=pred_edge_np[i], orient=pred_orient_np[i], )
             np.savez(os.path.join(raw_out_dir, f'{name}_gt.npz'), edge=gt_edge_np[i], orient=gt_orient_np[i], )
-            with open(os.path.join(raw_out_dir, f'{name}_pred.ss'), 'w') as fp:
-                fp.write('seq:' + seqs[i]+'\n')
-                gt_edge_str = ','.join([str(x) for x in gt_edge_np[i].tolist()])
-                fp.write('gt_edge:'+gt_edge_str+'\n')
-                edge_str = ','.join([str(x) for x in pred_edge_np[i].tolist()])
-                fp.write('pred_edge:'+edge_str+'\n')
-
+            for flag, data in [('pred', extract_pred), ('gt', extract_gt)]:
+                with open(os.path.join(raw_out_dir, f'{name}_{flag}.ss'), 'w') as fp:
+                    fp.write(f'name:{names[i]}\n')
+                    fp.write(f'seq:{seqs[i]}\n')
+                    fp.write(f'num interactions:{len(data)}\n')
+                    for tup in data:
+                        fp.write(','.join([str(i) for i in tup])+'\n')
     def eval(self, epoch):
         self.model.eval()
         time_st = time.time()
@@ -190,10 +188,11 @@ class NCfoldTrainer(BaseTrainer):
                 gt_orients += [b for b in data["label_orient"]]
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np)
-
-                out_preds.append(edge_orient_to_basepair_batch(pred_edge_np, pred_orient_np))
-                out_gts.append(edge_orient_to_basepair_batch(gt_edge_np, gt_orient_np))
+                extract_edge, extract_orient, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np)
+                out_preds.append(extract_pred)
+                extract_edge_gt, extract_orient_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np)
+                out_gts.append(extract_gt)
+                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:
@@ -262,10 +261,11 @@ class NCfoldTrainer(BaseTrainer):
                 gt_orients += [b for b in data["label_orient"]]
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np)
-
-                out_preds.append(edge_orient_to_basepair_batch(pred_edge_np, pred_orient_np))
-                out_gts.append(edge_orient_to_basepair_batch(gt_edge_np, gt_orient_np))
+                extract_edges, extract_orients, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np)
+                out_preds.append(extract_pred)
+                extract_edges_gt, extract_orients_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np)
+                out_gts.append(extract_gt)
+                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:

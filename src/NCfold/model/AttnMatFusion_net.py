@@ -352,6 +352,7 @@ class AttnMatFusion_net(nn.Module):
         edge = self.final_seq_proj(seq_feat)
         orient = self.final_mat_proj(mat_feat)
         # orient = torch.einsum('blh,bmh->bhlm', seq_feat, seq_feat)
+        orient = (orient + orient.transpose(-1, -2))/2
         return edge, orient
 
 
