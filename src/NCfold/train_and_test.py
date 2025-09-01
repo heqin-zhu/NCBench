@@ -28,7 +28,8 @@ LMs = ['structRFM', 'aido.rna-650m', 'aido.rna-1.6b', 'ernierna', 'ernierna-ss',
 
 
 class BaseTrainer(object):
-    def __init__(self,
+    def __init__(
+                 self,
                  args,
                  model,
                  pretrained_model=None,
@@ -41,7 +42,9 @@ class BaseTrainer(object):
                  loss_fn=None,
                  optimizer=None,
                  compute_metrics=None,
-                 visual_writer=None):
+                 visual_writer=None,
+                 best_ckpt_path=None,
+                ):
         self.args = args
         self.model = model
         self.pretrained_model = pretrained_model
@@ -57,6 +60,10 @@ class BaseTrainer(object):
         self.prime_metric = 'nc_score'
         self.visual_writer = visual_writer
         self.max_metric = 0.
+        self.best_ckpt_path = best_ckpt_path
+        if self.best_ckpt_path and os.path.exists(self.best_ckpt_path):
+            self.model.load_state_dict(torch.load(self.best_ckpt_path, map_location=self.args.device))
+            print(f'Loading checkpoint: {self.best_ckpt_path}')
         # init dataloaders
         self._prepare_dataloaders()
 
@@ -170,7 +177,7 @@ class NCfoldTrainer(BaseTrainer):
         outputs_names, outputs_seqs = [], []
         pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
         out_preds, out_gts = [], []
-        raw_out_dir = os.path.join(self.args.output_dir, 'out_npy')
+        raw_out_dir = os.path.join(self.args.output_dir, 'validate_results', f'epoch{epoch:03d}')
         os.makedirs(raw_out_dir, exist_ok=True)
         with tqdm(total=len(self.eval_dataset)) as pbar:
             for i, data in enumerate(self.eval_dataloader):
@@ -188,9 +195,9 @@ class NCfoldTrainer(BaseTrainer):
                 gt_orients += [b for b in data["label_orient"]]
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                extract_edge, extract_orient, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np)
+                extract_edge, extract_orient, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np, data['seq'])
                 out_preds.append(extract_pred)
-                extract_edge_gt, extract_orient_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np)
+                extract_edge_gt, extract_orient_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, data['seq'])
                 out_gts.append(extract_gt)
                 self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
                 outputs_names += data['name']
@@ -237,13 +244,21 @@ class NCfoldTrainer(BaseTrainer):
             json.dump(all_epoch_metric, fp)
 
     def test(self):
+        if self.test_dataset is None:
+            return
+        if self.best_ckpt_path and os.path.exists(self.best_ckpt_path):
+            self.model.load_state_dict(torch.load(self.best_ckpt_path, map_location=self.args.device))
+            print(f'Loading checkpoint: {self.best_ckpt_path}')
+        else:
+            print('Best checkpoint not found. Using the last epoch weights for test evalutation')  
+
         self.model.eval()
         time_st = time.time()
         num_total = 0
         outputs_names, outputs_seqs = [], []
         pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
         out_preds, out_gts = [], []
-        raw_out_dir = os.path.join(self.args.output_dir, 'out_npy')
+        raw_out_dir = os.path.join(self.args.output_dir, 'test_results')
         os.makedirs(raw_out_dir, exist_ok=True)
         with tqdm(total=len(self.eval_dataset)) as pbar:
             for i, data in enumerate(self.test_dataloader):
@@ -261,11 +276,11 @@ class NCfoldTrainer(BaseTrainer):
                 gt_orients += [b for b in data["label_orient"]]
                 pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
                 gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                extract_edges, extract_orients, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np)
+                extract_edges, extract_orients, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np, data['seq'])
                 out_preds.append(extract_pred)
-                extract_edges_gt, extract_orients_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np)
+                extract_edges_gt, extract_orients_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, data['seq'])
                 out_gts.append(extract_gt)
-                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge, pred_orient, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
+                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
                 outputs_names += data['name']
                 outputs_seqs += data['seq']
                 if num_total >= self.args.logging_steps:
@@ -334,19 +349,11 @@ class NCfoldTrainer(BaseTrainer):
         with open(test_metric_path, 'w') as fp:
             json.dump(all_test_metric, fp, indent=2)
 
-          
     def fit(self):
         for epoch in range(self.args.num_train_epochs):
             self.train(epoch)
             self.eval(epoch)
-            
-        if self.test_dataset is not None:
-            if self.best_ckpt_path and os.path.exists(self.best_ckpt_path):
-                self.model.load_state_dict(torch.load(self.best_ckpt_path, map_location=self.args.device))
-            else:
-                print('Best checkpoint not found. Using the last epoch weights for test evalutation')  
-            self.test()
-     
+        self.test()
 
 
 def get_args():
@@ -380,6 +387,8 @@ def get_args():
     parser.add_argument('--batch_size', type=int, default=64, help='The number of samples used per step & per device.')
     parser.add_argument('--num_train_epochs', type=int, default=60, help='The number of epoch for training.')
     parser.add_argument('--logging_steps', type=int)
+    parser.add_argument('--best_ckpt_path', type=str)
+
     # loss weight
     parser.add_argument('--weight_edgeW', type=float, default=5)
     parser.add_argument('--weight_edgeH', type=float, default=20)
@@ -443,6 +452,7 @@ def train_and_test():
         loss_fn=_loss_fn,
         optimizer=optimizer,
         compute_metrics=compute_metrics,
+        best_ckpt_path=args.best_ckpt_path,
     )
     # if args.train:
     #     for i_epoch in range(args.num_train_epochs):
