@@ -402,11 +402,11 @@ def get_args():
     parser.add_argument('--best_ckpt_path', type=str)
 
     # loss weight
-    parser.add_argument('--weight_edgeW', type=float, default=5)
-    parser.add_argument('--weight_edgeH', type=float, default=20)
-    parser.add_argument('--weight_edgeS', type=float, default=20)
-    parser.add_argument('--weight_trans', type=float, default=20)
-    parser.add_argument('--weight_cis', type=float, default=20)
+    parser.add_argument('--weight_edgeW', type=float, default=10)
+    parser.add_argument('--weight_edgeH', type=float, default=50)
+    parser.add_argument('--weight_edgeS', type=float, default=50)
+    parser.add_argument('--weight_trans', type=float, default=100)
+    parser.add_argument('--weight_cis', type=float, default=100)
     args = parser.parse_args()
     return args
 

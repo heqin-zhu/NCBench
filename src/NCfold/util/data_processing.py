@@ -281,11 +281,12 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include
         names = {name for name, seq in read_fasta(filter_fasta)}
         data_list = [d for d in data_list if d['name'] in names]
 
-    print(f'Processing {data_path}: valid={total_ct}, invalid={error_ct}')
-    print(f'Lengths: min={np.min(lengths)}, max={np.max(lengths)}')
+    print(f'Processing {data_path}: valid={total_ct}, invalid={error_ct}, min_len={np.min(lengths)}, max_len={np.max(lengths)}', end='')
     if max_seq_len is not None:
         data_list = [d for d in data_list if len(d['seq'])<=max_seq_len]
-        print(f'  L less than {max_seq_len}: {len([l for l in lengths if l<=max_seq_len])}')
+        print(f', len<={max_seq_len}: {len([l for l in lengths if l<=max_seq_len])}')
+    else:
+        print()
     return data_list
 
 
