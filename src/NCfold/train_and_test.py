@@ -101,7 +101,7 @@ class BaseTrainer(object):
             self.max_metric = metrics_dataset[self.prime_metric]
             save_model_path = os.path.join(checkpoint_dir, f"epoch{epoch}_{self.max_metric:.3f}.pth")
             torch.save(self.model.state_dict(), save_model_path)
-            print(f"Save model:", save_model_path)
+            # print(f"Save model:", save_model_path)
             
             ## save the best result 
             save_model_path = os.path.join(checkpoint_dir, f"best_epoch{epoch}_{self.max_metric:.3f}.pth")
@@ -109,7 +109,7 @@ class BaseTrainer(object):
             fixed_path = os.path.join(checkpoint_dir, "best.pth")
             torch.save(self.model.state_dict(), fixed_path)
             self.best_ckpt_path = fixed_path
-            print("Save best model:", save_model_path)
+            # print("Save best model:", save_model_path)
             
 
     def train(self, epoch):
@@ -125,38 +125,37 @@ class BaseTrainer(object):
 class NCfoldTrainer(BaseTrainer):
     def train(self, epoch):
         self.model.train()
-        time_st = time.time()
+        self.time_st = time.time()
         num_total, loss_total = 0, 0
-        mean_loss = float('inf')
+        self.train_loss = float('inf')
 
-        with tqdm(total=len(self.train_dataset)) as pbar:
-            for i, data in enumerate(self.train_dataloader):
-                # move tensor to device
-                input_ids = data["input_ids"].to(self.args.device)
-                mat = data["mat"].to(self.args.device)
-                mat_mask = data["mat_mask"].to(self.args.device)
-                seq_mask = data["seq_mask"].to(self.args.device)
-                label_edge = data["label_edge"].to(self.args.device)
-                label_orient = data["label_orient"].to(self.args.device)
-                LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
-                pred_edge, pred_orient = self.model(input_ids, mat, LM_embed, seq_mask, mat_mask)
-                loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
-                loss = loss_dic['loss']
-                # clear grads
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+        # with tqdm(total=len(self.train_dataset)) as pbar:
+        for i, data in enumerate(self.train_dataloader):
+            # move tensor to device
+            input_ids = data["input_ids"].to(self.args.device)
+            mat = data["mat"].to(self.args.device)
+            mat_mask = data["mat_mask"].to(self.args.device)
+            seq_mask = data["seq_mask"].to(self.args.device)
+            label_edge = data["label_edge"].to(self.args.device)
+            label_orient = data["label_orient"].to(self.args.device)
+            LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
+            pred_edge, pred_orient = self.model(input_ids, mat, LM_embed, seq_mask, mat_mask)
+            loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
+            loss = loss_dic['loss']
+            # clear grads
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-                num_total += self.args.batch_size
-                loss_total += loss.item()
-                mean_loss = loss_total/num_total
+            num_total += self.args.batch_size
+            loss_total += loss.item()
+            self.train_loss = loss_total/num_total
 
-                pbar.set_description(f'[train] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.train_dataloader):>4d}, best_score={self.max_metric:.3f}, train_loss={mean_loss:.4f}')
-                # reset loss if too many steps
-                if num_total >= self.args.logging_steps:
-                    num_total, loss_total = 0, 0
-        time_ed = time.time() - time_st
-        print(f'[train] epoch={epoch:>3d}, train_loss={mean_loss:.4f}, time={time_ed:.4f}s')
+            # pbar.set_description(f'[train] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.train_dataloader):>4d}, best_score={self.max_metric:.3f}, train_loss={self.train_loss:.4f}')
+            # reset loss if too many steps
+            if num_total >= self.args.logging_steps:
+                num_total, loss_total = 0, 0
+        # print(f'[train] epoch={epoch:>3d}, train_loss={self.train_loss:.4f}, time={time_ed:.4f}s')
 
     def save_pred_gt_results(self, raw_out_dir, names, seqs, pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt):
         for i in range(len(pred_edge_np)):
@@ -172,39 +171,49 @@ class NCfoldTrainer(BaseTrainer):
                         fp.write(','.join([str(i) for i in tup])+'\n')
     def eval(self, epoch):
         self.model.eval()
-        time_st = time.time()
+        # time_st = time.time()
         num_total = 0
+        self.val_loss, loss_total = 0, 0
         outputs_names, outputs_seqs = [], []
         pred_edges, pred_orients, gt_edges, gt_orients = [], [], [], []
         out_preds, out_gts = [], []
         raw_out_dir = os.path.join(self.args.output_dir, 'validate_results', f'epoch{epoch:03d}')
         os.makedirs(raw_out_dir, exist_ok=True)
-        with tqdm(total=len(self.eval_dataset)) as pbar:
-            for i, data in enumerate(self.eval_dataloader):
-                input_ids = data["input_ids"].to(self.args.device)
-                mat = data["mat"].to(self.args.device)
-                mat_mask = data["mat_mask"].to(self.args.device)
-                seq_mask = data["seq_mask"].to(self.args.device)
-                LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
-                with torch.no_grad():
-                    pred_edge, pred_orient = self.model(input_ids, mat, LM_embed, seq_mask, mat_mask)
-                num_total += self.args.batch_size
-                pred_edges += [b for b in pred_edge] # batch
-                pred_orients += [b for b in pred_orient]
-                gt_edges += [b for b in data["label_edge"]]
-                gt_orients += [b for b in data["label_orient"]]
-                pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
-                gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
-                extract_edge, extract_orient, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np, data['seq'])
-                out_preds.append(extract_pred)
-                extract_edge_gt, extract_orient_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, data['seq'])
-                out_gts.append(extract_gt)
-                self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
-                outputs_names += data['name']
-                outputs_seqs += data['seq']
-                if num_total >= self.args.logging_steps:
-                    num_total = 0
-                pbar.set_description(f'[eval ] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.eval_dataloader):>4d}, best_score={self.max_metric:.3f}')
+        # with tqdm(total=len(self.eval_dataset)) as pbar:
+        for i, data in enumerate(self.eval_dataloader):
+            input_ids = data["input_ids"].to(self.args.device)
+            mat = data["mat"].to(self.args.device)
+            mat_mask = data["mat_mask"].to(self.args.device)
+            seq_mask = data["seq_mask"].to(self.args.device)
+            LM_embed = data["LM_embed"].to(self.args.device) if 'LM_embed' in data else None
+            with torch.no_grad():
+                pred_edge, pred_orient = self.model(input_ids, mat, LM_embed, seq_mask, mat_mask)
+            num_total += self.args.batch_size
+            pred_edges += [b for b in pred_edge] # batch
+            pred_orients += [b for b in pred_orient]
+            gt_edges += [b for b in data["label_edge"]]
+            gt_orients += [b for b in data["label_orient"]]
+            pred_edge_np, pred_orient_np = pred_edge.detach().cpu().numpy(), pred_orient.detach().cpu().numpy()
+            gt_edge_np, gt_orient_np = data["label_edge"].detach().cpu().numpy(), data["label_orient"].detach().cpu().numpy()
+            extract_edge, extract_orient, extract_pred = extract_basepair_interaction(pred_edge_np, pred_orient_np, data['seq'])
+            out_preds.append(extract_pred)
+            extract_edge_gt, extract_orient_gt, extract_gt = extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, data['seq'])
+            out_gts.append(extract_gt)
+            self.save_pred_gt_results(raw_out_dir, data['name'], data['seq'], pred_edge_np, pred_orient_np, gt_edge_np, gt_orient_np, extract_pred, extract_gt)
+            outputs_names += data['name']
+            outputs_seqs += data['seq']
+
+            label_edge = data["label_edge"].to(self.args.device)
+            label_orient = data["label_orient"].to(self.args.device)
+            loss_dic = self.loss_fn(pred_edge, pred_orient, label_edge, label_orient)
+            loss = loss_dic['loss']
+            loss_total += loss.item()
+            self.val_loss = loss_total/num_total
+
+            if num_total >= self.args.logging_steps:
+                num_total = 0
+                loss_total = 0
+                # pbar.set_description(f'[eval ] epoch={epoch:>3d}, batch={i+1:>4d}/{len(self.eval_dataloader):>4d}, best_score={self.max_metric:.3f}')
 
         xs = [pred_edges, pred_orients, gt_edges, gt_orients]
         metric_dic_list = [self.compute_metrics(*x) for x in zip(*xs)]
@@ -230,9 +239,9 @@ class NCfoldTrainer(BaseTrainer):
         os.makedirs(metric_dir, exist_ok=True)
         pd.DataFrame(df_data).to_csv(os.path.join(metric_dir, f'test_{epoch}_{self.max_metric:.4f}.csv'), index=False)
 
-        metric_str = ' '.join([f'{k}={v:.4f}' for k, v in metrics_dataset.items() if 'f1' in k])
-        time_ed = time.time() - time_st
-        print(f'[eval ] epoch={epoch:>3d}, {metric_str}, time={time_ed:.4f}s')
+        metric_str = ', '.join([f'{k}={v:.4f}' for k, v in metrics_dataset.items() if 'f1' in k])
+        time_ed = time.time() - self.time_st
+        print(f'epoch={epoch:>3d}, train_loss={self.train_loss:.4f}, val_loss={self.val_loss:.4f}, {metric_str}, time={time_ed:.4f}s')
         epoch_metric_path = os.path.join(self.args.output_dir, 'epoch_metric.json')
         if os.path.exists(epoch_metric_path):
             with open(epoch_metric_path) as fp:
