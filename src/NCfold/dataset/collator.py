@@ -18,6 +18,19 @@ class BaseCollator(object):
         raise NotImplementedError("Must implement __call__ method.")
 
 
+
+def outer_product_mean(embedding):
+    '''
+        (B) x L x D -> (B) x L x L x D x D -> (B) x L x L
+    '''
+    shape = embedding.shape
+    embedding1 = embedding.unsqueeze(-2).unsqueeze(-1)
+    embedding2 = embedding.unsqueeze(-3).unsqueeze(-2)
+    outer = embedding1 * embedding2 
+    outer_mean = outer.reshape(*shape[:-1], shape[-2], -1).mean(dim=-1)
+    return outer_mean
+
+
 class NCfoldCollator(BaseCollator):
     def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint', top_k=1, rerun=False, *args, **kargs):
         super(NCfoldCollator, self).__init__()
@@ -66,7 +79,7 @@ class NCfoldCollator(BaseCollator):
                 for i in top_idx:
                     LM_name = self.LM_list[i]
                     fused_embeddings.append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir, rerun=self.rerun))
-                fused_embedding = np.stack([(em @ em.T).detach().cpu().numpy()  for em in fused_embeddings], axis=0) # top_k x L x L
+                fused_embedding = np.stack([outer_product_mean(em).detach().cpu().numpy()  for em in fused_embeddings], axis=0) # top_k x L x L
                 LM_embed_list.append(fused_embedding)
 
             mat_b.append(self.BPM.get_energy(seq))
