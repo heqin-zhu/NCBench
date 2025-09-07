@@ -16,14 +16,15 @@ from .dataset.collator import NCfoldCollator
 from .dataset.LM_embeddings import LM_dim_dic
 from .model.AttnMatFusion_net import AttnMatFusion_net
 from .model.SeqMatFusion_net import SeqMatFusion_net
+from .model.SeqMatFusion_net import SeqMatFusion_net
 from .model.loss_and_metric import NCfoldLoss, compute_metrics
 from .util.NCfold_kit import str2bool, str2list, count_para, get_config
 from .util.data_processing import extract_basepair_interaction, extract_basepair_interaction_gt
 
 
-MODELS = ['AttnMatFusion_net']
+MODELS = ['AttnMatFusion_net', 'SeqMatFusion_net']
 DATASETS = ["PDB_NC"]
-LMs = ['structRFM', 'rnabert', 'rnaernie', 'rnafm', 'splicebert', 'splicebert.510', 'splicebert-human.510', 'utrlm-te_el', 'utrlm-mrl', 'aido.rna-650m', 'rinalmo-micro', 'rinalmo-mega', 'aido.rna-1.6b', 'rinalmo-giga']
+LMs = ['structRFM', 'rnaernie', 'rnafm', 'splicebert', 'splicebert.510', 'splicebert-human.510', 'utrlm-te_el', 'utrlm-mrl', 'aido.rna-650m', 'rinalmo-micro', 'rinalmo-mega', 'aido.rna-1.6b', 'rinalmo-giga']
 
 
 class BaseTrainer(object):
@@ -378,8 +379,8 @@ def get_args():
 
     # loss weight
     parser.add_argument('--weight_edgeW', type=float, default=5)
-    parser.add_argument('--weight_edgeH', type=float, default=10)
-    parser.add_argument('--weight_edgeS', type=float, default=10)
+    parser.add_argument('--weight_edgeH', type=float, default=20)
+    parser.add_argument('--weight_edgeS', type=float, default=20)
     parser.add_argument('--weight_trans', type=float, default=20)
     parser.add_argument('--weight_cis', type=float, default=20)
     parser.add_argument('--weight_orient', type=float, default=0.5, help='edge_loss + weight_orient*orient_loss')
@@ -406,7 +407,13 @@ def train_and_test():
 
                                  )
     elif args.model_name == "SeqMatFusion_net":
-        model = SeqMatFusion_net(seq_dim=args.hidden_dim, mat_channels=args.hidden_dim, num_blocks=args.num_blocks)
+        model = SeqMatFusion_net(
+                                 use_BPM=args.use_BPM,
+                                 LM_embed_chan= args.top_k if args.LM_list else None,
+                                 seq_dim=args.hidden_dim, 
+                                 mat_channels=args.hidden_dim, 
+                                 num_blocks=args.num_blocks
+                                )
     else:
         raise ValueError("Unknown model name: {}".format(args.model_name))
     os.makedirs(args.output_dir, exist_ok=True)
@@ -420,13 +427,13 @@ def train_and_test():
         orient_weights=torch.tensor([1.0, args.weight_trans, args.weight_cis]),
     ).to(args.device)
 
-    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='train', include_canonical=args.include_canonical, use_RFdiff_data=args.use_RFdiff_data)
-    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='validate', include_canonical=args.include_canonical)
-    dataset_test = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='test', include_canonical=args.include_canonical)
+    dataset_train = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='train', include_canonical=args.include_canonical, use_RFdiff_data=args.use_RFdiff_data, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, rerun=args.rerun)
+    dataset_eval = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='validate', include_canonical=args.include_canonical, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, rerun=args.rerun)
+    dataset_test = RNAdata(args.dataset_dir, args.max_seq_len, filter_fasta=args.filter_fasta, phase='test', include_canonical=args.include_canonical, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, rerun=args.rerun)
 
     print(f'dataset_dir={args.dataset_dir}, filter={args.filter_fasta}: train:val:test={len(dataset_train)}:{len(dataset_eval)}:{len(dataset_test)}') 
     ## max_seq_len == None, for setting batch_max_len
-    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, LM_list=args.LM_list, LM_checkpoint_dir=args.LM_checkpoint_dir, top_k=args.top_k, rerun=args.rerun)
+    _collate_fn = NCfoldCollator(max_seq_len=None, replace_T=args.replace_T, replace_U=args.replace_U, top_k=args.top_k,)
     print(f'LM embeddings [top {args.top_k} of {len(args.LM_list)}]: {args.LM_list}')
     optimizer = AdamW(params=model.parameters(), lr=args.learning_rate)
     trainer = NCfoldTrainer(

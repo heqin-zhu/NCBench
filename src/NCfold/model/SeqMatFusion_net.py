@@ -21,26 +21,15 @@ class SeqBackbone(nn.Module):
             dropout=0.1,
             batch_first=True
         )
+        self.nhead = nhead
         self.transformer = TransformerEncoder(encoder_layers, num_layers=num_layers)
-        # self.transformer = nn.Sequential(
-        #     nn.Linear(seq_dim, self.hidden_dim),
-        #     nn.GELU(),
-        #     nn.LayerNorm(self.hidden_dim),
-        #     nn.Linear(self.hidden_dim, self.hidden_dim),
-        #     nn.GELU()
-        # )
         
-        # Residual connection projection
-        self.residual_proj = nn.Linear(hidden_dim, hidden_dim)
-        
-    def forward(self, x):
+    def forward(self, x, attention_mask=None):
         # x: BxLxD
-        residual = x
+        B, L, D = x.shape
         x = self.input_proj(x)
         x = self.layer_norm(x)
         x = self.transformer(x)
-        residual = self.residual_proj(residual)
-        x = x + residual
         return x
 
 
@@ -79,11 +68,13 @@ class MatBackbone(nn.Module):
         # Residual connection
         self.residual_proj = nn.Conv2d(input_channels, hidden_channels, kernel_size=1)
         
-    def forward(self, x):
+    def forward(self, x, attention_mask=None):
         # x: BxCxLxL
         residual = self.residual_proj(x)
         x = self.conv_layers(x)
         x = x + residual
+        if attention_mask is not None:
+            x *= attention_mask
         return x
 
 
@@ -107,7 +98,6 @@ class SeqMatFusion(nn.Module):
             nn.Linear(in_chan, in_chan // 2),
             nn.GELU(),
             nn.Linear(in_chan // 2, 2),
-            nn.Softmax(dim=-1)
         )
         
         # Output projection layers
@@ -116,11 +106,11 @@ class SeqMatFusion(nn.Module):
         
     def forward(self, seq, mat, seq_mask=None, mat_mask=None):
         # Input shapes: seq (BxLxD), mat (BxCxLxL)
-        B, L, _ = seq.shape
+        B, L, D = seq.shape
         
         # Feature extraction with residual connections
-        seq_feat = self.seq_extractor(seq)
-        mat_feat = self.mat_extractor(mat)
+        seq_feat = self.seq_extractor(seq, seq_mask)
+        mat_feat = self.mat_extractor(mat, mat_mask)
         
         # ---------------------------
         # Matrix-to-sequence fusion
@@ -129,7 +119,10 @@ class SeqMatFusion(nn.Module):
         mat_seq_i = torch.mean(mat_feat, dim=-2).transpose(1, 2)  # BxHxLxL -> BxHxL -> BxLxH
         mat_seq_j = torch.mean(mat_feat, dim=-1).transpose(1, 2)  # BxHxLxL -> BxHxL -> BxLxH
         attn_input = torch.cat([mat_seq_i, mat_seq_j], dim=-1)  # BxLx(2H)
-        attn_weight = self.fusion_attn(attn_input)  # BxLx1
+        attn_weight = self.fusion_attn(attn_input)  # BxLx2
+        if mat_mask is not None:
+            attn_weight = attn_weight.masked_fill(seq_mask.unsqueeze(-1).repeat(1, 1, 2)==0, float('-inf'))
+        attn_weight = attn_weight.softmax(dim=-1)
         mat_seq = mat_seq_i * attn_weight[...,0:1] + mat_seq_j * attn_weight[...,1:2]
 
         fused_seq = torch.cat([seq_feat, mat_seq], dim=-1)
@@ -138,12 +131,12 @@ class SeqMatFusion(nn.Module):
         # ---------------------------
         # Sequence-to-matrix fusion
         # ---------------------------
+        # feat1 = seq_feat.unsqueeze(-2).unsqueeze(-1)
+        # feat2 = seq_feat.unsqueeze(-3).unsqueeze(-2)
+        # (feat1 * feat2).reshape(B, L, L, -1)
         seq_mat = torch.einsum('blh,bmh->bhlm', seq_feat, seq_feat)  # BxHxLxL
         fused_mat = torch.cat([mat_feat, seq_mat], dim=1)  # Residual-style fusion
         out_mat = self.mat_output_proj(fused_mat)
-
-        if seq_mask is not None:
-            out_seq = out_seq * seq_mask
         if mat_mask is not None:
             out_mat = out_mat * mat_mask
         return out_seq, out_mat
@@ -154,14 +147,22 @@ class SeqMatFusion_net(nn.Module):
     Cascaded Sequence-Matrix Fusion Network (CSMF-Net)
     '''
 
-    def __init__(self, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=4, out_channels=3, num_blocks=16):
+    def __init__(self, LM_embed_chan=None, use_BPM=False, seq_dim=32, mat_channels=32, max_seq_len=512, out_dim=4, out_channels=3, num_blocks=16):
         super(SeqMatFusion_net, self).__init__()
         out_dim = out_dim or seq_dim
         out_channels = out_channels or mat_channels
 
+        mat_in_chan = 0
+        if use_BPM:
+            mat_in_chan += 2
+        if LM_embed_chan:
+            mat_in_chan += LM_embed_chan
+        self.use_BPM = use_BPM
+        self.LM_embed_chan = LM_embed_chan
+
         ## token embed
         self.seq_input_embed = nn.Embedding(6, seq_dim)
-        self.mat_input_proj = nn.Conv2d(2, mat_channels, kernel_size=1) # TODO 2
+        self.mat_input_proj = nn.Conv2d(mat_in_chan, mat_channels, kernel_size=1)
 
         ## positional embedding
         self.seq_rope = RoPE(dim=seq_dim, max_seq_len=max_seq_len)
@@ -174,9 +175,17 @@ class SeqMatFusion_net(nn.Module):
         self.final_seq_proj = nn.Linear(seq_dim, out_dim)
         self.final_mat_proj = nn.Conv2d(mat_channels, out_channels, kernel_size=1)
         
-    def forward(self, seq, mat, seq_mask=None, mat_mask=None):
+    def forward(self, seq, BPM=None, LM_embed=None, seq_mask=None, mat_mask=None):
         # token embed
         seq_feat = self.seq_input_embed(seq)
+
+        mat = []
+        if self.use_BPM:
+            mat.append(BPM)
+        if self.LM_embed_chan:
+            mat.append(LM_embed)
+        if mat:
+            mat = torch.cat(mat, dim=1)
         mat_feat = self.mat_input_proj(mat)
 
         # positional embedding
@@ -190,6 +199,7 @@ class SeqMatFusion_net(nn.Module):
         # Final output
         edge = self.final_seq_proj(seq_feat)
         orient = self.final_mat_proj(mat_feat)
+        orient = (orient + orient.transpose(-2, -1))/2
         return edge, orient
 
 
@@ -213,6 +223,7 @@ if __name__ == "__main__":
     
     # Initialize model
     model = SeqMatFusion_net(
+        mat_in_chan=2,
         seq_dim=seq_dim,
         mat_channels=mat_channels,
         max_seq_len = max_seq_len,

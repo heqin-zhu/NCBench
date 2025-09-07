@@ -7,7 +7,6 @@ import torch.nn.functional as F
 from BPfold.util.base_pair_motif import BPM_energy
 
 from ..util.NCfold_kit import Stack
-from .LM_embeddings import get_LM_models, get_LM_embedding, get_LM_embedding_score
 
 
 class BaseCollator(object):
@@ -16,7 +15,6 @@ class BaseCollator(object):
 
     def __call__(self, raw_data_b):
         raise NotImplementedError("Must implement __call__ method.")
-
 
 
 def outer_product_mean(embedding):
@@ -32,9 +30,8 @@ def outer_product_mean(embedding):
 
 
 class NCfoldCollator(BaseCollator):
-    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, LM_list=None, LM_checkpoint_dir='LM_checkpoint', top_k=1, rerun=False, *args, **kargs):
+    def __init__(self, max_seq_len=None, replace_T=True, replace_U=False, top_k=1, *args, **kargs):
         super(NCfoldCollator, self).__init__()
-        self.rerun = rerun
         self.max_seq_len = max_seq_len
         # only replace T or U
         assert replace_T ^ replace_U, "Only replace T or U."
@@ -42,12 +39,6 @@ class NCfoldCollator(BaseCollator):
         self.replace_U = replace_U
         self.base2idx = {'A': 0, 'U':1, 'G':2, 'C':3, 'N':4, 'PAD':5}
         self.BPM = BPM_energy()
-        self.LM_cache_dir = os.path.join(LM_checkpoint_dir, 'embeddings')
-        if LM_list is not None:
-            self.LM_list = LM_list
-            self.LM_dic = get_LM_models(LM_checkpoint_dir, self.LM_list)
-        else:
-            self.LM_list = []
         self.top_k = top_k
 
     def __call__(self, raw_data_b):
@@ -68,17 +59,15 @@ class NCfoldCollator(BaseCollator):
             seq = seq.replace("T", "U") if self.replace_T else seq.replace("U", "T")
             seq_b.append(seq)
 
-            ## LM embed
-            if self.LM_list:
-                scores = []
-                for LM_name in self.LM_list:
-                    scores.append(get_LM_embedding_score(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir, rerun=self.rerun))
+            scores = raw_data['scores']
+            embeddings = raw_data['embeddings']
 
+            ## LM embed
+            if scores and embeddings:
                 top_idx = np.argsort(scores)[-self.top_k:]
                 fused_embeddings = []
                 for i in top_idx:
-                    LM_name = self.LM_list[i]
-                    fused_embeddings.append(get_LM_embedding(self.LM_dic[LM_name], LM_name, name, seq, cache_dir=self.LM_cache_dir, rerun=self.rerun))
+                    fused_embeddings.append(embeddings[i])
                 fused_embedding = np.stack([outer_product_mean(em).detach().cpu().numpy()  for em in fused_embeddings], axis=0) # top_k x L x L
                 LM_embed_list.append(fused_embedding)
 
