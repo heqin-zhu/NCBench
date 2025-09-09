@@ -106,17 +106,28 @@ def get_LM_embedding(model, LM_name, name, seq, cache_dir='LM_embeddings', rerun
 def get_LM_embedding_score(model, LM_name, name, seq, cache_dir='LM_embeddings', rerun=False):
     cache_dir = os.path.join(cache_dir, LM_name)
     os.makedirs(cache_dir, exist_ok=True)
-    cache_path = os.path.join(cache_dir, name+'.score')
-
-    if os.path.exists(cache_path) and not rerun:
-        with open(cache_path) as fp:
-            return float(fp.read())
+    cache_path_iso = os.path.join(cache_dir, name+'.isoscore')
+    cache_path_cosim = os.path.join(cache_dir, name+'.cosimscore')
+        
+    if os.path.exists(cache_path_iso) and os.path.exists(cache_path_cosim) and not rerun:
+        with open(cache_path_iso) as fp:
+            isoscores = float(fp.read())
+        with open(cache_path_cosim) as fp:
+            cosim_scores = float(fp.read())
     else:
         embedding = get_LM_embedding(model, LM_name, name, seq, cache_dir, rerun)
-        score = compute_embedding_score(embedding)
-        with open(cache_path, 'w') as fp:
-            fp.write(str(score))
-        return score
+        isoscores, cosim_scores = compute_embedding_score(embedding)
+        with open(cache_path_iso, 'w') as fp:
+            fp.write(str(isoscores))
+        with open(cache_path_cosim, 'w') as fp:
+            fp.write(str(cosim_scores))
+
+    # here, the score reflects the effect of cosimilarity, because cosim value is bigger than isoscore.      
+    # score = 0.5 * isoscores - 0.5 * cosim_scores
+    # return score
+    return isoscores
+
+    
 
 
 if __name__ == '__main__':
