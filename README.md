@@ -1,6 +1,6 @@
 <p align="center">
 
-  <h1 align="center">NC-Bench and NCfold for RNA non-canonical base pair prediction</h1>
+  <h1 align="center">NC-Bench and NCfold<br> for RNA non-canonical base pair prediction</h1>
   <div align="center">
     <img src="images/Fig1.png", width="800">
   </div>
@@ -66,7 +66,7 @@ Explanation:
 
 ### NCfold training
 ```shell
-# nohup python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir data --batch_size 1 --hidden_dim 256 --num_blocks 6 --output_dir .runs/NCfold_attnmat --filter_fasta NC_seq_mmseqs.fasta --LM_list structRFM rnaernie rnafm splicebert utrlm-te_el aido.rna-650m rinalmo-micro --top_k 2 --epoch 500  --phase train --learning_rate 0.00005 > log_attnmat 2>&1 &
+nohup python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMatFusion_net --dataset_dir data --batch_size 1 --hidden_dim 256 --num_blocks 6 --output_dir .runs/NCfold_attnmat --filter_fasta NC_seq_mmseqs.fasta --LM_list structRFM rnaernie rnafm splicebert utrlm-te_el aido.rna-650m rinalmo-micro --top_k 2 --epoch 500  --phase train --learning_rate 0.00005 > log_attnmat 2>&1 &
 ```
 ## LICENSE
 [MIT LICENSE](LICENSE)
