@@ -35,11 +35,47 @@ edge_index_dic = {
                   3: 'S',
                 }
 
+
+def download_PDB_RNA3DB(dest='PDB_RNA3DB', rna3db_split='rna3db-jsons/split.json', fmt='cif'):
+    os.makedirs(dest, exist_ok=True)
+    DOWNLOAD_CMD = 'wget https://files.rcsb.org/download/{name}.{fmt} -P {dest}'
+    sufs = ['.pdb', '.cif']
+
+    with open(rna3db_split) as fp:
+        split_data = json.loads(fp.read())
+    names = set()
+    for k, v in split_data.items():
+        num_chain = 0
+        comp_names = set()
+        for comp, d in v.items():
+            for name_chain in d:
+                name = name_chain.split('_')[0]
+                comp_names.add(name.upper())
+            num_chain += len(d)
+        names = names.union(comp_names)
+        print(f'{k}: components={len(v)}, comp_names={len(comp_names)}, chains={num_chain}')
+    missing_names = []
+
+    for name in names:
+        for suf in sufs:
+            path = os.path.join(dest, name+suf)
+            if os.path.exists(path):
+                break
+        else:
+            cmd = DOWNLOAD_CMD.format(name=name, dest=dest, fmt=fmt)
+            ret = os.system(cmd)
+            if ret:
+                print(name, ret)
+                missing_names.append(name)
+    print('total names', len(names))
+    print('missing    ', len(missing_names))
+
+
 def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
     tmp_dir = 'tmp'
     os.makedirs(tmp_dir, exist_ok=True)
     tmp_file = os.path.join(tmp_dir, 'tmp_op.ss')
-    op_src = '/public2/home/heqinzhu/gitrepo/RNA/RNA3d/onePiece/src'
+    op_src = '~/gitrepo/RNA/RNA3d/onePiece/src'
     os.system(f'java -cp {op_src} Zhu_onepiece {pdb_path} {tmp_file} > log_op 2>&1')
     with open(tmp_file) as fp:
         head, seq, ss = fp.read().split('\n')
@@ -47,11 +83,43 @@ def get_seq_and_SS_from_PDB_by_onepiece(pdb_path):
 
 
 def get_seq_from_xml_by_RNAVIEW(path):
+    # deprecated: no chainID info
     pattern = r'<seq-data>\s+(?P<seq>[A-Za-z ]+)\s+</seq-data>'
+    chains = []
     with open(path) as fp:
         text = fp.read()
         for f in re.findall(pattern, text):
-            return f.replace(' ', '')
+            chain = f.replace(' ', '')
+            chains.append(chain)
+    return chains
+
+
+def get_seq_from_torsion_by_RNAVIEW(path, separate_chain=True):
+    separate_chain_dic = {}
+    single_chain_seq = []
+    with open(path) as fp:
+        lines = list(fp.readlines())
+        i = 0
+        n = len(lines)
+        while i<n:
+            if lines[i].startswith('Ch Res'):
+                break
+            i+=1
+        for idx in range(i+1, n):
+            parts = [part for part in lines[idx].split(' ') if part]
+            if len(parts)>=3:
+                chain, base, num = parts[:3]
+                num = int(num)
+                if chain not in separate_chain_dic:
+                    separate_chain_dic[chain] = {'seq': [], 'idx_map': {}}
+                separate_chain_dic[chain]['seq'].append(base)
+                separate_chain_dic[chain]['idx_map'][num] = len(separate_chain_dic[chain]['seq'])
+                single_chain_seq.append(base)
+    separate_chain_dic = {chain: {'seq': ''.join(dic['seq']), 'idx_map': dic['idx_map']} for chain, dic in separate_chain_dic.items()}
+    if separate_chain:
+        return separate_chain_dic
+    else:
+        return ''.join(single_chain_seq)
 
 
 def get_connSS_from_PDB_by_RNAVIEW(pdb_path):
@@ -84,14 +152,17 @@ def get_connSS_from_PDB_by_RNAVIEW(pdb_path):
 
 
 def run_RNAVIEW(pdb_path):
-    CMD = f'rnaview {pdb_path}'
+    fmt = pdb_path[pdb_path.rfind('.')+1:]
+    assert fmt in ['pdb', 'cif']
+    flag = '' if fmt == 'pdb' else '--cif'
+    CMD = f'rnaview {flag} {pdb_path}'
     p = subprocess.Popen(CMD, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     # text = p.stdout.read()
     # p.stdout.close()
     return p
 
 
-def parse_RNAVIEW_out(file_path, save_info=False, run_failed=False):
+def parse_RNAVIEW_out(file_path, save_info=False, run_failed=True, rerun=False, chain_idx_map={}):
     '''
         file_path: *.pdb.out, after run `RNAVIEW *.pdb`
         gen: *.pdb.json
@@ -101,16 +172,16 @@ def parse_RNAVIEW_out(file_path, save_info=False, run_failed=False):
             p = run_RNAVIEW(file_path[:-4])
             p.join()
         else:
-            return []
+            return {}
     name = get_file_name(file_path)
     dest = os.path.dirname(file_path)
     dest_path = os.path.join(dest, name+'.json')
-    if os.path.exists(dest_path):
+    if os.path.exists(dest_path) and not rerun:
         with open(dest_path) as fp:
             info = json.load(fp)
             return info
-    elif run_failed:
-        pattern = r'\s+(?P<left>\d+)_(?P<right>\d+),.*?(?P<pair>[augctAUGCT]\-[augctAUGCT]).*?: (?P<edge_type>[\+\-WHS]/[\+\-WHS]|\s+) +(?P<orientation>cis|tran|stacked).*?(?P<class_id>[IVX]+|n/a|!.*?\(.*?\)|)\n'
+    else:
+        pattern = r'\s+(?P<global_left>\d+)_(?P<global_right>\d+), (?P<left_chain>.*?):\s+(?P<left>\d+) (?P<pair>[augctAUGCNT]\-[augctAUGCNT])\s+(?P<right>\d+) (?P<right_chain>.*?): (?P<edge_type>[\+\-WHS]/[\+\-WHS]|\s+) +(?P<orientation>cis|tran|stacked).*?(?P<class_id>[IVX]+|n/a|!.*?\(.*?\)|)\n'
 
         length_pattern = r'The total base pairs =\s+\d+ \(from\s+(?P<length>\d+) bases\)'
         with open(file_path) as fp:
@@ -118,29 +189,39 @@ def parse_RNAVIEW_out(file_path, save_info=False, run_failed=False):
         length = None
         for L in re.findall(length_pattern, text):
             length = int(L)
-        info = []
-        for left, right, pair, edge_type, orientation, class_id  in re.findall(pattern, text):
-            info.append({
-                         'left': int(left),
-                         'right': int(right),
+        info = {}
+        for global_left, global_right, left_chain, left, pair, right, right_chain, edge_type, orientation, class_id in re.findall(pattern, text):
+            if chain_idx_map: # separate_chain
+                if left_chain!=right_chain: # pair in different chains, ignored
+                    continue
+                left, right = int(left), int(right)
+                left = chain_idx_map[left_chain].get(left, left)
+                right = chain_idx_map[right_chain].get(right, right)
+                cur_chain = left_chain
+            else:
+                left = int(global_left)
+                right = int(global_right)
+                cur_chain = 'single'
+            if cur_chain not in info:
+                info[cur_chain] = []
+            info[cur_chain].append({
+                         'left': left,
+                         'right': right,
                          'edge_type': edge_type,
                          'orientation': orientation,
-                         'class_id': class_id,
                          'pair': pair,
+                         'class_id': class_id,
                         })
         if len(info)!=0 and save_info:
             with open(dest_path, 'w') as fp:
                 json.dump(info, fp)
         return info
-    else:
-        return []
 
 
 def cif2pdb(src, dest):
     from Bio.PDB import MMCIFParser, PDBIO
-    structure_id = "example"
     parser = MMCIFParser(QUIET=True)
-    structure = parser.get_structure(structure_id, src)
+    structure = parser.get_structure('structure', src)
     io = PDBIO()
     io.set_structure(structure)
     io.save(dest)
@@ -164,12 +245,18 @@ def prepare_dataset_onepiece(dest, data_dir, rerun=False):
     return df
 
 
-def prepare_dataset_RNAVIEW_json(dest, pdb_dir, filter_fasta=None, rerun=False):
+def prepare_dataset_RNAVIEW_json(dest, pdb_dir, filter_fasta=None, separate_chain=True, rerun=True):
     if not dest.endswith('.json'):
         dest = dest+'.json'
     if not os.path.exists(dest) or rerun:
         data = []
-        pdb_paths = [os.path.join(pdb_dir, f) for f in os.listdir(pdb_dir) if (not f.endswith('_tmp.pdb')) and f.endswith('.pdb')]
+        sufs = ['.pdb', '.cif']
+        pdb_names = [f[:f.rfind('.')] for f in os.listdir(pdb_dir) if any(f.endswith(suf) for suf in sufs) and len(f)==8]
+        for pdb_name in pdb_names:
+            if all(not os.path.exists(os.path.join(pdb_dir, pdb_name+suf+'_torsion.out')) for suf in sufs):
+                data_path = os.path.join(pdb_dir, pdb_name+'.cif')
+                print('run rnaview', data_path)
+                run_RNAVIEW(data_path)
         # ps = []
         # for pdb_path in tqdm(pdb_paths):
         #     ps.append(run_RNAVIEW(pdb_path))
@@ -179,22 +266,48 @@ def prepare_dataset_RNAVIEW_json(dest, pdb_dir, filter_fasta=None, rerun=False):
         filter_names = None
         if filter_fasta:
             filter_names = [name for name, seq in read_fasta(filter_fasta)]
-        for pdb_path in tqdm(pdb_paths):
+        failed_names = set()
+        for pdb_name in tqdm(pdb_names):
+            pdb_path = os.path.join(pdb_dir, pdb_name+'.cif')
             name = get_file_name(pdb_path)
-            if filter_names and name in filter_names:
-                seq = get_seq_from_xml_by_RNAVIEW(pdb_path+'.xml')
-                info = parse_RNAVIEW_out(pdb_path+'.out', save_info=True)
-                if len(info)!=0:
-                    data.append({
-                                  'name': name,
-                                  'seq': seq,
-                                  'pair_info': info,
-                                 })
+            if (filter_names and name in filter_names) or not filter_names:
+                torsion_path = pdb_path+'_torsion.out'
+                out_path = pdb_path+'.out'
+                if all(os.path.exists(path) and os.path.getsize(path)>0 for path in [torsion_path, out_path]):
+                    chain_seq = get_seq_from_torsion_by_RNAVIEW(torsion_path, separate_chain=separate_chain)
+                    chain_idx_map = {k: dic['idx_map'] for k, dic in chain_seq.items()} if separate_chain else {}
+                    chain_info_dic = parse_RNAVIEW_out(out_path, save_info=True, rerun=rerun, chain_idx_map=chain_idx_map)
+                    if separate_chain:
+                        for chain, info in chain_info_dic.items():
+                            if len(info)==0:
+                                print('no info', name, chain)
+                            elif chain in chain_seq:
+                                data.append({
+                                              'name': f'{name}_{chain}',
+                                              'seq': chain_seq[chain]['seq'],
+                                              'pair_info': info,
+                                             })
+                            else:
+                                print(f'chain {chain}, found no seq, {chain_seq_dic.keys()}')
+                                failed_names.add(f'{name}_{chain}')
+                    else:
+                        info_list = []
+                        for chain, info in chain_info_dic.items():
+                            info_list += info
+                        data.append({
+                                      'name': f'{name}',
+                                      'seq': chain_seq,
+                                      'pair_info': info_list,
+                                     })
+                else:
+                    failed_names.add(name)
         with open(dest, 'w') as fp:
             json.dump(data, fp)
+        with open('failed.json', 'w') as fp:
+            json.dump(list(failed_names), fp)
 
 
-def construct_RNAVIEW_labels(data_dic, verbose=False, include_canonical=False):
+def construct_RNAVIEW_labels(data_dic, include_canonical=False):
     '''
         data_dic:
             seq: str
@@ -217,8 +330,8 @@ def construct_RNAVIEW_labels(data_dic, verbose=False, include_canonical=False):
         class_id = dic['class_id']
         pair = dic['pair'].upper()
         if not (left < L and right < L and seq[left] == pair[0] and seq[right] == pair[2]):
-            if verbose:
-                print(f'[Error] Bases dismatch, {pair},  seq={seq}, left={left}, right={right}')
+            print(data_dic["name"], left, right, pair, len(seq))
+            # print(f'[Error] Bases dismatch, {pair}, seq[{left}]={seq[left]}, seq[{right}]={seq[right]}\nseq={seq}, {data_dic["name"]}')
             return None
         if not dic['pair']:
             return None
@@ -249,11 +362,19 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include
     data_list = []
     index_data = []
     lengths = []
+    error_label = error_seq = error_dlabel = 0
     for dic in json_data:
         name = dic['name']
         seq = dic['seq']
         d = construct_RNAVIEW_labels(dic, include_canonical=include_canonical)
         if d is None or len(seq)==0 or len(d['labels'])==0:
+            if d is None:
+                error_label +=1
+            else:
+                if len(d['labels'])==0:
+                    error_dlabel +=1
+            if len(seq)==0:
+                error_seq +=1
             error_ct+=1
         else:
             labels = d['labels']
@@ -270,11 +391,11 @@ def load_dataset_RNAVIEW(data_path, max_seq_len=None, filter_fasta=None, include
                                'seq': seq,
                                'pair_types': pair_types,
                               })
-            # 1xL edge array: 0 for Watson-crick, 1 for Hoogesteen, 2 for Sugar.
+            # 1xL edge array: 0 for Watson-crick, 1 for Hoogsteen, 2 for Sugar.
             # print(labels['pair']['edge_arr']) # L, 
             # LxL orient matrix: 0 for no-pair, 1 for trans, 2 for cis.
             # print(labels['pair']['orient_mat'])
-
+    print(error_label, error_seq, error_dlabel)
     with open(index_dest, 'w') as fp:
         json.dump(index_data, fp)
     if filter_fasta is not None:
@@ -376,22 +497,21 @@ def extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, seqs=None):
             cls = gt_orient_np[i, j]
             if cls>0:
                 pairs.append((i, j, cls))
-
                 final_data.append((i, j, edge_index_dic[edges[i]], edge_index_dic[edges[j]], orient_index_dic[cls]))
     return edges, pairs, final_data
 
 
 if __name__ == '__main__':
+    # download_PDB_RNA3DB(dest='data/PDB_RNA3DB', rna3db_split='data/rna3db_split.json', fmt='cif')
+
     data_dir = 'data/PDB_download'
+    data_dir = 'data/PDB_RNA3DB'
     json_path = 'data/NC_data.json'
 
     # df = prepare_dataset_onepiece(dest, data_dir, rerun=False)
     # print(df)
 
-    prepare_dataset_RNAVIEW_json(json_path, data_dir)
-    load_dataset_RNAVIEW(json_path)
-
-    ## Example
-    # pdb_path = os.path.join(data_dir, '3Q51.pdb')
-    # info = parse_RNAVIEW_out(pdb_path+'.out')
-    # print(info, len(info))
+    print('Parsing RNAVIEW output and saving as json...')
+    prepare_dataset_RNAVIEW_json(json_path, data_dir, separate_chain=False, rerun=rerun)
+    print('Convert json to labels...')
+    load_dataset_RNAVIEW(json_path, include_canonical=True)

@@ -281,6 +281,8 @@ class FuseFormer(nn.Module):
         for ind, mod in enumerate(self.layers):
             if self.conv_in_chan>0:
                 adj = self.conv_layers[ind](adj)
+            else:
+                adj = None
             x, adj = mod(x, adj=adj, seq_mask=seq_mask, mat_mask=mat_mask, return_attn_weights=True)
         return x, adj
 
