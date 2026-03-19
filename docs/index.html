@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <!-- Primary Meta Tags -->
+  <meta name="title" content="NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction">
+  <meta name="description" content="NCBench introduces a benchmark dataset with 925 RNA sequences containing 6,708 high-quality non-canonical base pair annotations, along with NCfold, a deep learning framework for accurate NC base pair prediction.">
+  <meta name="keywords" content="RNA structure prediction, Non-canonical base pairs, Deep learning, RNA foundation models, Bioinformatics, Computational biology, NCfold, NCBench">
+  <meta name="author" content="Heqin Zhu, Ruifeng Li, Ao Chang, Mingqian Li, Hongyang Chen, Peng Xiong, Shaohua Kevin Zhou">
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="NCBench and NCfold">
+  <meta property="og:title" content="NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction">
+  <meta property="og:description" content="NCBench introduces a benchmark dataset with 925 RNA sequences containing 6,708 high-quality non-canonical base pair annotations, along with NCfold, a deep learning framework for accurate NC base pair prediction.">
+  <meta property="og:url" content="https://heqin-zhu.github.io/NCBench/ncbench">
+  <meta property="og:image" content="https://heqin-zhu.github.io/NCBench/static/images/overview-NCBench-NCfold.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="NCBench - Research Preview">
+  <meta property="article:published_time" content="2026-1-26T00:00:00.000Z">
+  <meta property="article:author" content="Heqin Zhu">
+  <meta property="article:section" content="Research">
+  <meta property="article:tag" content="RNA structure prediction">
+  <meta property="article:tag" content="Non-canonical base pairs">
+
+
+  <!-- Academic/Research Specific -->
+  <meta name="citation_title" content="NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction">
+  <meta name="citation_author" content="Heqin Zhu">
+  <meta name="citation_author" content="Ruifeng Li">
+  <meta name="citation_author" content="Ao Chang">
+  <meta name="citation_author" content="Mingqian Li">
+  <meta name="citation_author" content="Hongyang Chen">
+  <meta name="citation_author" content="Peng Xiong">
+  <meta name="citation_author" content="Shaohua Kevin Zhou">
+  <meta name="citation_publication_date" content="2026">
+  <meta name="citation_conference_title" content="bioRxiv">
+  <meta name="citation_pdf_url" content="https://www.biorxiv.org/content/10.1101/2025.11.16.688746v1">
+  <meta name="citation_doi" content="10.1101/2025.11.16.688746">
+  
+  <!-- Additional SEO -->
+  <meta name="theme-color" content="#2563eb">
+  <meta name="msapplication-TileColor" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://ajax.googleapis.com">
+  <link rel="preconnect" href="https://documentcloud.adobe.com">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+
+
+  <title>NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction</title>
+  
+  <!-- Favicon and App Icons -->
+  <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
+  <link rel="apple-touch-icon" href="static/images/favicon.ico">
+  
+  <!-- Critical CSS - Load synchronously -->
+  <link rel="stylesheet" href="static/css/bulma.min.css">
+  <link rel="stylesheet" href="static/css/index.css">
+  
+  <!-- Non-critical CSS - Load asynchronously -->
+  <link rel="preload" href="static/css/bulma-carousel.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="static/css/bulma-slider.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="static/css/fontawesome.all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  
+  <!-- Fallback for browsers that don't support preload -->
+  <noscript>
+    <link rel="stylesheet" href="static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  </noscript>
+  
+  <!-- Fonts - Optimized loading -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Defer non-critical JavaScript -->
+  <script defer src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="https://documentcloud.adobe.com/view-sdk/main.js"></script>
+  <script defer src="static/js/fontawesome.all.min.js"></script>
+  <script defer src="static/js/bulma-carousel.min.js"></script>
+  <script defer src="static/js/bulma-slider.min.js"></script>
+  <script defer src="static/js/index.js"></script>
+  
+  <!-- Structured Data for Academic Papers -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ScholarlyArticle",
+    "headline": "NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction",
+    "description": "NCBench introduces a benchmark dataset with 925 RNA sequences containing 6,708 high-quality non-canonical base pair annotations, along with NCfold, a deep learning framework for accurate NC base pair prediction.",
+    "author": [
+      {
+        "@type": "Person",
+        "name": "Heqin Zhu"
+      },
+      {
+        "@type": "Person",
+        "name": "Ruifeng Li"
+      },
+      {
+        "@type": "Person",
+        "name": "Ao Chang"
+      },
+      {
+        "@type": "Person",
+        "name": "Mingqian Li"
+      },
+      {
+        "@type": "Person",
+        "name": "Hongyang Chen"
+      },
+      {
+        "@type": "Person",
+        "name": "Peng Xiong"
+      },
+      {
+        "@type": "Person",
+        "name": "Shaohua Kevin Zhou"
+      },
+    ],
+    "datePublished": "2025-11-26",
+    "publisher": {
+      "@type": "Organization",
+      "name": "bioRxiv"
+    },
+    "url": "https://heqin-zhu.github.io/NCBench",
+    "image": "https://heqin-zhu.github.io/NCBench/static/images/overview-NCBench-NCfold.png",
+    "keywords": ["RNA structure prediction", "Non-canonical base pairs", "Deep learning", "RNA foundation models", "Bioinformatics"],
+    "abstract": "Non-canonical (NC) base pairs play crucial roles in RNA structural stability, functionality, and recognition processes. Despite their importance, limited benchmark resources and deep learning approaches have hindered accurate NC base pair prediction. We introduce NCBench, a comprehensive benchmark dataset containing 925 RNA sequences with 6,708 high-quality NC annotations curated from protein-RNA complexes and RNA-only 3D structures. NCBench features rigorous annotation standards, redundancy reduction, and multiple RNA types. Additionally, we present NCfold, a novel deep learning framework that fuses sequence features with structural priors from RNA foundation models. NCfold employs a dual-branch architecture with Representative Embedding Fusion (REF) to integrate multiple RNA foundation models and uses Base Pair Motif energy matrices as structural priors. Extensive experiments demonstrate NCfold achieves state-of-the-art performance, with the AttnMatFusion_net variant significantly outperforming existing methods.",
+    "citation": "@article {NCBench,
+	author = {Zhu, Heqin and Li, Ruifeng and Chang, Ao and Li, Mingqian and Chen, Hongyang and Xiong, Peng and Zhou, Shaohua Kevin},
+	title = {Toward Accurate RNA Non-Canonical Structure Prediction: The NC-Bench Benchmark and the NCfold Framework},
+	elocation-id = {2025.11.16.688746},
+	year = {2025},
+	doi = {10.1101/2025.11.16.688746},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746},
+	eprint = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746.full.pdf},
+	journal = {bioRxiv}
+}",
+    "isAccessibleForFree": true,
+    "license": "https://creativecommons.org/licenses/by/4.0/",
+    "mainEntity": {
+      "@type": "WebPage",
+      "@id": "https://heqin-zhu.github.io/NCBench/ncbench"
+    },
+    "about": [
+      {
+        "@type": "Thing",
+        "name": "RNA structural biology"
+      },
+      {
+        "@type": "Thing",
+        "name": "Computational biology"
+      },
+      {
+        "@type": "Thing",
+        "name": "Deep learning"
+      }
+    ]
+  }
+  </script>
+  
+  <!-- Website/Organization Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "NCBench and NCfold",
+    "url": "https://heqin-zhu.github.io",
+    "logo": "https://heqin-zhu.github.io/NCBench/static/images/favicon.ico",
+    "sameAs": [
+    ]
+  }
+  </script>
+</head>
+<body>
+
+
+  <!-- Scroll to Top Button -->
+  <button class="scroll-to-top" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
+    <i class="fas fa-chevron-up"></i>
+  </button>
+
+  <!-- More Works Dropdown -->
+  <div class="more-works-container">
+    <button class="more-works-btn" onclick="toggleMoreWorks()" title="View More Works">
+      <i class="fas fa-flask"></i>
+      More Works
+      <i class="fas fa-chevron-down dropdown-arrow"></i>
+    </button>
+    <div class="more-works-dropdown" id="moreWorksDropdown">
+      <div class="dropdown-header">
+        <h4>More Works</h4>
+        <button class="close-btn" onclick="toggleMoreWorks()">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="works-list">
+        <a href="https://github.com/heqin-zhu/structRFM" class="work-item" target="_blank">
+          <div class="work-info">
+            <h5>structRFM</h5>
+            <p>Structure-guided pre-training of RNA foundation model</p>
+            <span class="work-venue">structRFM</span>
+          </div>
+          <i class="fas fa-external-link-alt"></i>
+        </a>
+        <a href="https://github.com/heqin-zhu/BPfold" class="work-item" target="_blank">
+          <div class="work-info">
+            <h5>BPfold</h5>
+            <p>RNA secondary structure prediction via base pair motif energy</p>
+            <span class="work-venue">BPfold</span>
+          </div>
+          <i class="fas fa-external-link-alt"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <main id="main-content">
+  <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <h1 class="title is-1 publication-title">NC-Bench And NCfold: A Benchmark And Closed-Loop Framework For RNA Non-Canonical Base-Pair Prediction</h1>
+            <div class="is-size-5 publication-authors">
+              <span class="author-block">
+                <a href="https://heqin-zhu.github.io" target="_blank">Heqin Zhu</a><sup>1, #</sup>,</span>
+                <span class="author-block">
+                  Ruifeng Li<sup>2, #</sup>,</span>
+                  <span class="author-block">
+                    Ao Chang<sup>1</sup>,</span>
+                    <span class="author-block">
+                      Mingqina Li<sup>2</sup>,</span>
+                      <span class="author-block">
+                        Hongyang Chen<sup>2, *</sup>,</span>
+                        <span class="author-block">
+                          Peng Xiong<sup>1, *</sup>,</span>
+                          <span class="author-block">
+                            Shaohua Kevin Zhou<sup>1, *</sup>,</span>
+                  </div>
+
+                  <div class="is-size-5 publication-authors">
+                    <span class="author-block">University of Science and Technology of China<br>ICLR 2026</span>
+                    <span class="eql-cntrb"><small><br><sup>#</sup>Indicates Equal Contribution</small></span>
+                    <span class="eql-cntrb"><small><br><sup>*</sup>Indicates Corresponding Author</small></span>
+                  </div>
+
+                  <div class="column has-text-centered">
+                    <div class="publication-links">
+                      <span class="link-block">
+                        <a href="static/pdfs/NCBench.pdf" target="_blank"
+                        class="external-link button is-normal is-rounded is-dark">
+                        <span class="icon">
+                          <i class="fas fa-file-pdf"></i>
+                        </span>
+                        <span>Paper</span>
+                      </a>
+                    </span>
+
+                    <span class="link-block">
+                      <a href="https://www.biorxiv.org/content/10.1101/2025.11.16.688746v1" target="_blank"
+                      class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon">
+                        <i class="fas fa-file-pdf"></i>
+                      </span>
+                      <span>bioRxiv</span>
+                    </a>
+                  </span>
+
+                  <span class="link-block">
+                    <a href="https://github.com/heqin-zhu/NCBench" target="_blank"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fab fa-github"></i>
+                    </span>
+                    <span>Code</span>
+                  </a>
+                </span>
+
+                <!--
+
+                <span class="link-block">
+                  <a href="https://www.biorxiv.org/content/10.1101/2025.11.16.688746v1" target="_blank"
+                  class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <i class="ai ai-doi"></i>
+                  </span>
+                  <span>DOI</span>
+                </a>
+              </span>
+                -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- Teaser image-->
+<section class="hero teaser">
+  <div class="container is-max-desktop">
+    <div class="hero-body">
+      <img src="static/images/overview-NCBench-NCfold.png" alt="NCfold Framework Overview" class="center-image">
+      <h2 class="subtitle has-text-centered">
+        Overview of the NC-Bench pipeline and NCfold framework.
+      </h2>
+    </div>
+  </div>
+</section>
+<!-- End teaser image -->
+
+<!-- Paper abstract -->
+<section class="section hero is-light">
+  <div class="container is-max-desktop">
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Abstract</h2>
+        <div class="content has-text-justified">
+          <p>
+            Non-canonical (NC) base pairs play crucial roles in RNA structural stability, functionality, and recognition processes. Despite their importance, limited benchmark resources and deep learning approaches have hindered accurate NC base pair prediction. We introduce NCBench, a comprehensive benchmark dataset containing 925 RNA sequences with 6,708 high-quality NC annotations curated from protein-RNA complexes and RNA-only 3D structures. NCBench features rigorous annotation standards, redundancy reduction, and multiple RNA types. Additionally, we present NCfold, a novel deep learning framework that fuses sequence features with structural priors from RNA foundation models. NCfold employs a dual-branch architecture with Representative Embedding Fusion (REF) to integrate multiple RNA foundation models and uses Base Pair Motif energy matrices as structural priors. Extensive experiments demonstrate NCfold achieves state-of-the-art performance, with the AttnMatFusion_net variant significantly outperforming existing methods. Analysis reveals that longer training sequences and careful foundation model selection improve performance, particularly for G-U wobble pairs and multi-branch loops. NCBench and NCfold provide valuable resources and methodologies for RNA structural biology research.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- End paper abstract -->
+
+
+<!-- Image carousel -->
+<section class="hero is-small">
+  <div class="hero-body">
+    <div class="container">
+      <div id="results-carousel" class="carousel results-carousel">
+      <div class="item">
+        <img src="static/images/Comparison-canonical-methods.png" alt="Performance Comparison" loading="lazy"/>
+        <h2 class="subtitle has-text-centered">
+          Performance comparison of NCfold with existing methods. NCfold achieves state-of-the-art performance on NC base pair prediction.
+        </h2>
+      </div>
+      <div class="item">
+        <img src="static/images/IsoScore-RFM.png" alt="IsoScore Distribution" loading="lazy"/>
+        <h2 class="subtitle has-text-centered">
+          IsoScore distribution across different RNA foundation models. IsoScore is used to select the most representative embeddings for fusion.
+       </h2>
+     </div>
+     <div class="item">
+      <img src="static/images/top-k.png" alt="Top-k Selection Strategy" loading="lazy"/>
+      <h2 class="subtitle has-text-centered">
+        Top-k foundation model selection strategy. Selecting the top models by IsoScore improves prediction performance.
+      </h2>
+    </div>
+  </div>
+</div>
+</div>
+</section>
+<!-- End image carousel -->
+
+
+
+<!-- Youtube video -->
+<section class="hero is-small is-light">
+  <div class="hero-body">
+    <div class="container">
+      <!-- Paper video. -->
+      <h2 class="title is-3">Video Presentation</h2>
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <p>Video presentation coming soon.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<!-- End youtube video -->
+
+
+
+
+<!-- Paper poster -->
+<section class="hero is-small is-light">
+  <div class="hero-body">
+    <div class="container">
+      <h2 class="title">Poster</h2>
+
+      <div class="columns is-centered has-text-centered">
+        <div class="column is-four-fifths">
+          <img src="static/images/poster_NCBench_00.png" alt="NCBench Poster" style="width: 100%; height: auto;">
+        </div>
+      </div>
+
+      </div>
+    </div>
+  </section>
+<!--End paper poster -->
+
+
+<!--BibTex citation -->
+  <section class="section" id="BibTeX">
+    <div class="container is-max-desktop content">
+      <div class="bibtex-header">
+        <h2 class="title">BibTeX</h2>
+        <button class="copy-bibtex-btn" onclick="copyBibTeX()" title="Copy BibTeX to clipboard">
+          <i class="fas fa-copy"></i>
+          <span class="copy-text">Copy</span>
+        </button>
+      </div>
+      <pre id="bibtex-code"><code>
+      @article {NCBench,
+	author = {Zhu, Heqin and Li, Ruifeng and Chang, Ao and Li, Mingqian and Chen, Hongyang and Xiong, Peng and Zhou, Shaohua Kevin},
+	title = {Toward Accurate RNA Non-Canonical Structure Prediction: The NC-Bench Benchmark and the NCfold Framework},
+	elocation-id = {2025.11.16.688746},
+	year = {2025},
+	doi = {10.1101/2025.11.16.688746},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746},
+	eprint = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746.full.pdf},
+	journal = {bioRxiv}
+}</code></pre>
+    </div>
+</section>
+<!--End BibTex citation -->
+
+
+  <footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+
+          <p>
+            This page was built using the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a> which was adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page.
+            You are free to borrow the source code of this website, we just ask that you link back to this page in the footer. <br> This website is licensed under a <a rel="license"  href="http://creativecommons.org/licenses/by-sa/4.0/" target="_blank">Creative
+            Commons Attribution-ShareAlike 4.0 International License</a>.
+          </p>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- Statcounter tracking code -->
+  
+<!-- You can add a tracker to track page visits by creating an account at statcounter.com -->
+
+    <!-- End of Statcounter Code -->
+
+  </body>
+  </html>
