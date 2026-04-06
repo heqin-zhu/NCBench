@@ -152,6 +152,8 @@ def get_connSS_from_PDB_by_RNAVIEW(pdb_path):
 
 
 def run_RNAVIEW(pdb_path):
+    if '_tmp.pdb' in pdb_path:
+        return
     fmt = pdb_path[pdb_path.rfind('.')+1:]
     assert fmt in ['pdb', 'cif']
     flag = '' if fmt == 'pdb' else '--cif'
@@ -245,62 +247,55 @@ def prepare_dataset_onepiece(dest, data_dir, rerun=False):
     return df
 
 
-def prepare_dataset_RNAVIEW_json(dest, pdb_dir, filter_fasta=None, separate_chain=True, rerun=True):
+def prepare_dataset_RNAVIEW_json(dest, pdb_paths, filter_fasta=None, separate_chain=True, rerun=True):
     if not dest.endswith('.json'):
         dest = dest+'.json'
     if not os.path.exists(dest) or rerun:
         data = []
-        sufs = ['.pdb', '.cif']
-        pdb_names = [f[:f.rfind('.')] for f in os.listdir(pdb_dir) if any(f.endswith(suf) for suf in sufs) and len(f)==8]
-        for pdb_name in pdb_names:
-            if all(not os.path.exists(os.path.join(pdb_dir, pdb_name+suf+'_torsion.out')) for suf in sufs):
-                data_path = os.path.join(pdb_dir, pdb_name+'.cif')
-                print('run rnaview', data_path)
-                run_RNAVIEW(data_path)
-        # ps = []
-        # for pdb_path in tqdm(pdb_paths):
-        #     ps.append(run_RNAVIEW(pdb_path))
-        # for p in ps:
-        #     if p is not None:
-        #         p.wait()
         filter_names = None
         if filter_fasta:
             filter_names = [name for name, seq in read_fasta(filter_fasta)]
         failed_names = set()
-        for pdb_name in tqdm(pdb_names):
-            pdb_path = os.path.join(pdb_dir, pdb_name+'.cif')
+        for pdb_path in tqdm(pdb_paths):
+            cur_dir = os.path.dirname(pdb_path)
+            pdb_name = os.path.basename(pdb_path)
             name = get_file_name(pdb_path)
             if (filter_names and name in filter_names) or not filter_names:
                 torsion_path = pdb_path+'_torsion.out'
                 out_path = pdb_path+'.out'
-                if all(os.path.exists(path) and os.path.getsize(path)>0 for path in [torsion_path, out_path]):
-                    chain_seq = get_seq_from_torsion_by_RNAVIEW(torsion_path, separate_chain=separate_chain)
-                    chain_idx_map = {k: dic['idx_map'] for k, dic in chain_seq.items()} if separate_chain else {}
-                    chain_info_dic = parse_RNAVIEW_out(out_path, save_info=True, rerun=rerun, chain_idx_map=chain_idx_map)
-                    if separate_chain:
-                        for chain, info in chain_info_dic.items():
-                            if len(info)==0:
-                                print('no info', name, chain)
-                            elif chain in chain_seq:
-                                data.append({
-                                              'name': f'{name}_{chain}',
-                                              'seq': chain_seq[chain]['seq'],
-                                              'pair_info': info,
-                                             })
-                            else:
-                                print(f'chain {chain}, found no seq, {chain_seq_dic.keys()}')
-                                failed_names.add(f'{name}_{chain}')
-                    else:
-                        info_list = []
-                        for chain, info in chain_info_dic.items():
-                            info_list += info
-                        data.append({
-                                      'name': f'{name}',
-                                      'seq': chain_seq,
-                                      'pair_info': info_list,
-                                     })
+                if any(not os.path.exists(path) or os.path.getsize(path)<=0 for path in [torsion_path, out_path]):
+                    try:
+                        p = run_RNAVIEW(pdb_path)
+                        p.wait()
+                    except Exception as e:
+                        print(e, pdb_path)
+                        failed_names.add(name)
+                        continue
+                chain_seq = get_seq_from_torsion_by_RNAVIEW(torsion_path, separate_chain=separate_chain)
+                chain_idx_map = {k: dic['idx_map'] for k, dic in chain_seq.items()} if separate_chain else {}
+                chain_info_dic = parse_RNAVIEW_out(out_path, save_info=True, rerun=rerun, chain_idx_map=chain_idx_map)
+                if separate_chain:
+                    for chain, info in chain_info_dic.items():
+                        if len(info)==0:
+                            print('no info', name, chain)
+                        elif chain in chain_seq:
+                            data.append({
+                                          'name': f'{name}_{chain}',
+                                          'seq': chain_seq[chain]['seq'],
+                                          'pair_info': info,
+                                         })
+                        else:
+                            print(f'chain {chain}, found no seq, {chain_seq_dic.keys()}')
+                            failed_names.add(f'{name}_{chain}')
                 else:
-                    failed_names.add(name)
+                    info_list = []
+                    for chain, info in chain_info_dic.items():
+                        info_list += info
+                    data.append({
+                                  'name': f'{name}',
+                                  'seq': chain_seq,
+                                  'pair_info': info_list,
+                                 })
         with open(dest, 'w') as fp:
             json.dump(data, fp)
         with open('failed.json', 'w') as fp:
@@ -504,8 +499,8 @@ def extract_basepair_interaction_gt(gt_edge_np, gt_orient_np, seqs=None):
 if __name__ == '__main__':
     # download_PDB_RNA3DB(dest='data/PDB_RNA3DB', rna3db_split='data/rna3db_split.json', fmt='cif')
 
-    data_dir = 'data/PDB_download'
     data_dir = 'data/PDB_RNA3DB'
+    data_dir = 'data/PDB_download'
     json_path = 'data/NC_data.json'
 
     # df = prepare_dataset_onepiece(dest, data_dir, rerun=False)
