@@ -74,15 +74,12 @@ nohup python3 -m src.NCfold.train_and_test --device 'cuda:0' --model_name AttnMa
 ## Citation
 If you find our work helpful, please consider to star the repo and cite our paper :blush:
 ```bibtex
-@article {NCBench,
-	author = {Zhu, Heqin and Li, Ruifeng and Chang, Ao and Li, Mingqian and Chen, Hongyang and Xiong, Peng and Zhou, Shaohua Kevin},
-	title = {Toward Accurate RNA Non-Canonical Structure Prediction: The NC-Bench Benchmark and the NCfold Framework},
-	elocation-id = {2025.11.16.688746},
-	year = {2025},
-	doi = {10.1101/2025.11.16.688746},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746},
-	eprint = {https://www.biorxiv.org/content/early/2025/11/17/2025.11.16.688746.full.pdf},
-	journal = {bioRxiv}
+@inproceedings{zhu2026nc,
+  title={{NC}-bench and {NCfold}: A benchmark and closed-loop framework for rna non-canonical base-pair prediction},
+  author={Zhu, Heqin and Li, Ruifeng and Chang, Ao and Li, Mingqian and Chen, Hongyang and Xiong, Peng and Zhou, S Kevin},
+  booktitle={International Conference on Learning Representations},
+  volume={2026},
+  pages={135816--135832},
+  year={2026}
 }
 ```
